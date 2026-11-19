@@ -1,0 +1,1646 @@
+[
+  {
+    "id": "GS",
+    "parent_id": null,
+    "code": "GS",
+    "name": "高等数学",
+    "level": 1,
+    "aliases_json": [
+      "高等数学"
+    ],
+    "syllabus_ref": "高等数学",
+    "description": "高等数学"
+  },
+  {
+    "id": "LA",
+    "parent_id": null,
+    "code": "LA",
+    "name": "线性代数",
+    "level": 1,
+    "aliases_json": [
+      "线性代数"
+    ],
+    "syllabus_ref": "线性代数",
+    "description": "线性代数"
+  },
+  {
+    "id": "GS1",
+    "parent_id": "GS",
+    "code": "GS1",
+    "name": "一、函数、极限、连续",
+    "level": 2,
+    "aliases_json": [
+      "一、函数、极限、连续"
+    ],
+    "syllabus_ref": "一、函数、极限、连续",
+    "description": "一、函数、极限、连续"
+  },
+  {
+    "id": "GS2",
+    "parent_id": "GS",
+    "code": "GS2",
+    "name": "二、一元函数微分学",
+    "level": 2,
+    "aliases_json": [
+      "二、一元函数微分学"
+    ],
+    "syllabus_ref": "二、一元函数微分学",
+    "description": "二、一元函数微分学"
+  },
+  {
+    "id": "GS3",
+    "parent_id": "GS",
+    "code": "GS3",
+    "name": "三、一元函数积分学",
+    "level": 2,
+    "aliases_json": [
+      "三、一元函数积分学"
+    ],
+    "syllabus_ref": "三、一元函数积分学",
+    "description": "三、一元函数积分学"
+  },
+  {
+    "id": "GS4",
+    "parent_id": "GS",
+    "code": "GS4",
+    "name": "四、多元函数微积分学",
+    "level": 2,
+    "aliases_json": [
+      "四、多元函数微积分学"
+    ],
+    "syllabus_ref": "四、多元函数微积分学",
+    "description": "四、多元函数微积分学"
+  },
+  {
+    "id": "GS5",
+    "parent_id": "GS",
+    "code": "GS5",
+    "name": "五、常微分方程",
+    "level": 2,
+    "aliases_json": [
+      "五、常微分方程"
+    ],
+    "syllabus_ref": "五、常微分方程",
+    "description": "五、常微分方程"
+  },
+  {
+    "id": "LA1",
+    "parent_id": "LA",
+    "code": "LA1",
+    "name": "一、行列式",
+    "level": 2,
+    "aliases_json": [
+      "一、行列式"
+    ],
+    "syllabus_ref": "一、行列式",
+    "description": "一、行列式"
+  },
+  {
+    "id": "LA2",
+    "parent_id": "LA",
+    "code": "LA2",
+    "name": "二、矩阵",
+    "level": 2,
+    "aliases_json": [
+      "二、矩阵"
+    ],
+    "syllabus_ref": "二、矩阵",
+    "description": "二、矩阵"
+  },
+  {
+    "id": "LA3",
+    "parent_id": "LA",
+    "code": "LA3",
+    "name": "三、向量",
+    "level": 2,
+    "aliases_json": [
+      "三、向量"
+    ],
+    "syllabus_ref": "三、向量",
+    "description": "三、向量"
+  },
+  {
+    "id": "LA4",
+    "parent_id": "LA",
+    "code": "LA4",
+    "name": "四、线性方程组",
+    "level": 2,
+    "aliases_json": [
+      "四、线性方程组"
+    ],
+    "syllabus_ref": "四、线性方程组",
+    "description": "四、线性方程组"
+  },
+  {
+    "id": "LA5",
+    "parent_id": "LA",
+    "code": "LA5",
+    "name": "五、矩阵的特征值和特征向量",
+    "level": 2,
+    "aliases_json": [
+      "五、矩阵的特征值和特征向量"
+    ],
+    "syllabus_ref": "五、矩阵的特征值和特征向量",
+    "description": "五、矩阵的特征值和特征向量"
+  },
+  {
+    "id": "LA6",
+    "parent_id": "LA",
+    "code": "LA6",
+    "name": "六、二次型",
+    "level": 2,
+    "aliases_json": [
+      "六、二次型"
+    ],
+    "syllabus_ref": "六、二次型",
+    "description": "六、二次型"
+  },
+  {
+    "id": "GS1-01",
+    "parent_id": "GS1",
+    "code": "GS1-01",
+    "name": "函数的概念与表示法",
+    "level": 3,
+    "aliases_json": [
+      "函数的概念与表示法"
+    ],
+    "syllabus_ref": "函数的概念与表示法",
+    "description": "函数的概念与表示法"
+  },
+  {
+    "id": "GS1-02",
+    "parent_id": "GS1",
+    "code": "GS1-02",
+    "name": "函数的有界性、单调性、周期性、奇偶性",
+    "level": 3,
+    "aliases_json": [
+      "函数的有界性、单调性、周期性、奇偶性"
+    ],
+    "syllabus_ref": "函数的有界性、单调性、周期性、奇偶性",
+    "description": "函数的有界性、单调性、周期性、奇偶性"
+  },
+  {
+    "id": "GS1-03",
+    "parent_id": "GS1",
+    "code": "GS1-03",
+    "name": "复合函数、反函数、分段函数、隐函数",
+    "level": 3,
+    "aliases_json": [
+      "复合函数、反函数、分段函数、隐函数"
+    ],
+    "syllabus_ref": "复合函数、反函数、分段函数、隐函数",
+    "description": "复合函数、反函数、分段函数、隐函数"
+  },
+  {
+    "id": "GS1-04",
+    "parent_id": "GS1",
+    "code": "GS1-04",
+    "name": "基本初等函数的性质及其图形",
+    "level": 3,
+    "aliases_json": [
+      "基本初等函数的性质及其图形"
+    ],
+    "syllabus_ref": "基本初等函数的性质及其图形",
+    "description": "基本初等函数的性质及其图形"
+  },
+  {
+    "id": "GS1-05",
+    "parent_id": "GS1",
+    "code": "GS1-05",
+    "name": "初等函数与函数关系的建立",
+    "level": 3,
+    "aliases_json": [
+      "初等函数与函数关系的建立"
+    ],
+    "syllabus_ref": "初等函数与函数关系的建立",
+    "description": "初等函数与函数关系的建立"
+  },
+  {
+    "id": "GS1-06",
+    "parent_id": "GS1",
+    "code": "GS1-06",
+    "name": "数列极限与函数极限的定义及其性质",
+    "level": 3,
+    "aliases_json": [
+      "数列极限与函数极限的定义及其性质"
+    ],
+    "syllabus_ref": "数列极限与函数极限的定义及其性质",
+    "description": "数列极限与函数极限的定义及其性质"
+  },
+  {
+    "id": "GS1-07",
+    "parent_id": "GS1",
+    "code": "GS1-07",
+    "name": "左极限与右极限",
+    "level": 3,
+    "aliases_json": [
+      "左极限与右极限"
+    ],
+    "syllabus_ref": "左极限与右极限",
+    "description": "左极限与右极限"
+  },
+  {
+    "id": "GS1-08",
+    "parent_id": "GS1",
+    "code": "GS1-08",
+    "name": "无穷小量与无穷大量",
+    "level": 3,
+    "aliases_json": [
+      "无穷小量与无穷大量"
+    ],
+    "syllabus_ref": "无穷小量与无穷大量",
+    "description": "无穷小量与无穷大量"
+  },
+  {
+    "id": "GS1-09",
+    "parent_id": "GS1",
+    "code": "GS1-09",
+    "name": "无穷小量的比较与等价无穷小替换",
+    "level": 3,
+    "aliases_json": [
+      "无穷小量的比较与等价无穷小替换"
+    ],
+    "syllabus_ref": "无穷小量的比较与等价无穷小替换",
+    "description": "无穷小量的比较与等价无穷小替换"
+  },
+  {
+    "id": "GS1-10",
+    "parent_id": "GS1",
+    "code": "GS1-10",
+    "name": "极限的四则运算",
+    "level": 3,
+    "aliases_json": [
+      "极限的四则运算"
+    ],
+    "syllabus_ref": "极限的四则运算",
+    "description": "极限的四则运算"
+  },
+  {
+    "id": "GS1-11",
+    "parent_id": "GS1",
+    "code": "GS1-11",
+    "name": "极限存在的两个准则（单调有界、夹逼）",
+    "level": 3,
+    "aliases_json": [
+      "极限存在的两个准则（单调有界、夹逼）"
+    ],
+    "syllabus_ref": "极限存在的两个准则（单调有界、夹逼）",
+    "description": "极限存在的两个准则（单调有界、夹逼）"
+  },
+  {
+    "id": "GS1-12",
+    "parent_id": "GS1",
+    "code": "GS1-12",
+    "name": "两个重要极限",
+    "level": 3,
+    "aliases_json": [
+      "两个重要极限"
+    ],
+    "syllabus_ref": "两个重要极限",
+    "description": "两个重要极限"
+  },
+  {
+    "id": "GS1-13",
+    "parent_id": "GS1",
+    "code": "GS1-13",
+    "name": "函数连续的概念",
+    "level": 3,
+    "aliases_json": [
+      "函数连续的概念"
+    ],
+    "syllabus_ref": "函数连续的概念",
+    "description": "函数连续的概念"
+  },
+  {
+    "id": "GS1-14",
+    "parent_id": "GS1",
+    "code": "GS1-14",
+    "name": "函数间断点的类型",
+    "level": 3,
+    "aliases_json": [
+      "函数间断点的类型"
+    ],
+    "syllabus_ref": "函数间断点的类型",
+    "description": "函数间断点的类型"
+  },
+  {
+    "id": "GS1-15",
+    "parent_id": "GS1",
+    "code": "GS1-15",
+    "name": "初等函数的连续性",
+    "level": 3,
+    "aliases_json": [
+      "初等函数的连续性"
+    ],
+    "syllabus_ref": "初等函数的连续性",
+    "description": "初等函数的连续性"
+  },
+  {
+    "id": "GS1-16",
+    "parent_id": "GS1",
+    "code": "GS1-16",
+    "name": "闭区间上连续函数的性质（有界性、最值、介值）",
+    "level": 3,
+    "aliases_json": [
+      "闭区间上连续函数的性质（有界性、最值、介值）"
+    ],
+    "syllabus_ref": "闭区间上连续函数的性质（有界性、最值、介值）",
+    "description": "闭区间上连续函数的性质（有界性、最值、介值）"
+  },
+  {
+    "id": "GS2-01",
+    "parent_id": "GS2",
+    "code": "GS2-01",
+    "name": "导数与微分的概念",
+    "level": 3,
+    "aliases_json": [
+      "导数与微分的概念"
+    ],
+    "syllabus_ref": "导数与微分的概念",
+    "description": "导数与微分的概念"
+  },
+  {
+    "id": "GS2-02",
+    "parent_id": "GS2",
+    "code": "GS2-02",
+    "name": "导数的几何意义与物理意义",
+    "level": 3,
+    "aliases_json": [
+      "导数的几何意义与物理意义"
+    ],
+    "syllabus_ref": "导数的几何意义与物理意义",
+    "description": "导数的几何意义与物理意义"
+  },
+  {
+    "id": "GS2-03",
+    "parent_id": "GS2",
+    "code": "GS2-03",
+    "name": "函数的可导性与连续性的关系",
+    "level": 3,
+    "aliases_json": [
+      "函数的可导性与连续性的关系"
+    ],
+    "syllabus_ref": "函数的可导性与连续性的关系",
+    "description": "函数的可导性与连续性的关系"
+  },
+  {
+    "id": "GS2-04",
+    "parent_id": "GS2",
+    "code": "GS2-04",
+    "name": "平面曲线的切线与法线",
+    "level": 3,
+    "aliases_json": [
+      "平面曲线的切线与法线"
+    ],
+    "syllabus_ref": "平面曲线的切线与法线",
+    "description": "平面曲线的切线与法线"
+  },
+  {
+    "id": "GS2-05",
+    "parent_id": "GS2",
+    "code": "GS2-05",
+    "name": "导数与微分的四则运算",
+    "level": 3,
+    "aliases_json": [
+      "导数与微分的四则运算"
+    ],
+    "syllabus_ref": "导数与微分的四则运算",
+    "description": "导数与微分的四则运算"
+  },
+  {
+    "id": "GS2-06",
+    "parent_id": "GS2",
+    "code": "GS2-06",
+    "name": "基本初等函数的导数公式",
+    "level": 3,
+    "aliases_json": [
+      "基本初等函数的导数公式"
+    ],
+    "syllabus_ref": "基本初等函数的导数公式",
+    "description": "基本初等函数的导数公式"
+  },
+  {
+    "id": "GS2-07",
+    "parent_id": "GS2",
+    "code": "GS2-07",
+    "name": "复合函数求导（链式法则）",
+    "level": 3,
+    "aliases_json": [
+      "复合函数求导（链式法则）"
+    ],
+    "syllabus_ref": "复合函数求导（链式法则）",
+    "description": "复合函数求导（链式法则）"
+  },
+  {
+    "id": "GS2-08",
+    "parent_id": "GS2",
+    "code": "GS2-08",
+    "name": "反函数、隐函数、参数方程求导",
+    "level": 3,
+    "aliases_json": [
+      "反函数、隐函数、参数方程求导"
+    ],
+    "syllabus_ref": "反函数、隐函数、参数方程求导",
+    "description": "反函数、隐函数、参数方程求导"
+  },
+  {
+    "id": "GS2-09",
+    "parent_id": "GS2",
+    "code": "GS2-09",
+    "name": "高阶导数",
+    "level": 3,
+    "aliases_json": [
+      "高阶导数"
+    ],
+    "syllabus_ref": "高阶导数",
+    "description": "高阶导数"
+  },
+  {
+    "id": "GS2-10",
+    "parent_id": "GS2",
+    "code": "GS2-10",
+    "name": "一阶微分形式的不变性",
+    "level": 3,
+    "aliases_json": [
+      "一阶微分形式的不变性"
+    ],
+    "syllabus_ref": "一阶微分形式的不变性",
+    "description": "一阶微分形式的不变性"
+  },
+  {
+    "id": "GS2-11",
+    "parent_id": "GS2",
+    "code": "GS2-11",
+    "name": "微分中值定理（罗尔、拉格朗日、柯西、泰勒）",
+    "level": 3,
+    "aliases_json": [
+      "微分中值定理（罗尔、拉格朗日、柯西、泰勒）"
+    ],
+    "syllabus_ref": "微分中值定理（罗尔、拉格朗日、柯西、泰勒）",
+    "description": "微分中值定理（罗尔、拉格朗日、柯西、泰勒）"
+  },
+  {
+    "id": "GS2-12",
+    "parent_id": "GS2",
+    "code": "GS2-12",
+    "name": "洛必达法则",
+    "level": 3,
+    "aliases_json": [
+      "洛必达法则"
+    ],
+    "syllabus_ref": "洛必达法则",
+    "description": "洛必达法则"
+  },
+  {
+    "id": "GS2-13",
+    "parent_id": "GS2",
+    "code": "GS2-13",
+    "name": "函数单调性的判别",
+    "level": 3,
+    "aliases_json": [
+      "函数单调性的判别"
+    ],
+    "syllabus_ref": "函数单调性的判别",
+    "description": "函数单调性的判别"
+  },
+  {
+    "id": "GS2-14",
+    "parent_id": "GS2",
+    "code": "GS2-14",
+    "name": "函数的极值",
+    "level": 3,
+    "aliases_json": [
+      "函数的极值"
+    ],
+    "syllabus_ref": "函数的极值",
+    "description": "函数的极值"
+  },
+  {
+    "id": "GS2-15",
+    "parent_id": "GS2",
+    "code": "GS2-15",
+    "name": "函数图形的凹凸性与拐点",
+    "level": 3,
+    "aliases_json": [
+      "函数图形的凹凸性与拐点"
+    ],
+    "syllabus_ref": "函数图形的凹凸性与拐点",
+    "description": "函数图形的凹凸性与拐点"
+  },
+  {
+    "id": "GS2-16",
+    "parent_id": "GS2",
+    "code": "GS2-16",
+    "name": "渐近线（水平、铅直、斜）",
+    "level": 3,
+    "aliases_json": [
+      "渐近线（水平、铅直、斜）"
+    ],
+    "syllabus_ref": "渐近线（水平、铅直、斜）",
+    "description": "渐近线（水平、铅直、斜）"
+  },
+  {
+    "id": "GS2-17",
+    "parent_id": "GS2",
+    "code": "GS2-17",
+    "name": "函数图形的描绘",
+    "level": 3,
+    "aliases_json": [
+      "函数图形的描绘"
+    ],
+    "syllabus_ref": "函数图形的描绘",
+    "description": "函数图形的描绘"
+  },
+  {
+    "id": "GS2-18",
+    "parent_id": "GS2",
+    "code": "GS2-18",
+    "name": "最大值与最小值及其应用",
+    "level": 3,
+    "aliases_json": [
+      "最大值与最小值及其应用"
+    ],
+    "syllabus_ref": "最大值与最小值及其应用",
+    "description": "最大值与最小值及其应用"
+  },
+  {
+    "id": "GS2-19",
+    "parent_id": "GS2",
+    "code": "GS2-19",
+    "name": "弧微分",
+    "level": 3,
+    "aliases_json": [
+      "弧微分"
+    ],
+    "syllabus_ref": "弧微分",
+    "description": "弧微分"
+  },
+  {
+    "id": "GS2-20",
+    "parent_id": "GS2",
+    "code": "GS2-20",
+    "name": "曲率、曲率圆与曲率半径",
+    "level": 3,
+    "aliases_json": [
+      "曲率、曲率圆与曲率半径"
+    ],
+    "syllabus_ref": "曲率、曲率圆与曲率半径",
+    "description": "曲率、曲率圆与曲率半径"
+  },
+  {
+    "id": "GS3-01",
+    "parent_id": "GS3",
+    "code": "GS3-01",
+    "name": "原函数与不定积分的概念",
+    "level": 3,
+    "aliases_json": [
+      "原函数与不定积分的概念"
+    ],
+    "syllabus_ref": "原函数与不定积分的概念",
+    "description": "原函数与不定积分的概念"
+  },
+  {
+    "id": "GS3-02",
+    "parent_id": "GS3",
+    "code": "GS3-02",
+    "name": "不定积分的基本性质与基本积分公式",
+    "level": 3,
+    "aliases_json": [
+      "不定积分的基本性质与基本积分公式"
+    ],
+    "syllabus_ref": "不定积分的基本性质与基本积分公式",
+    "description": "不定积分的基本性质与基本积分公式"
+  },
+  {
+    "id": "GS3-03",
+    "parent_id": "GS3",
+    "code": "GS3-03",
+    "name": "定积分的概念与基本性质",
+    "level": 3,
+    "aliases_json": [
+      "定积分的概念与基本性质"
+    ],
+    "syllabus_ref": "定积分的概念与基本性质",
+    "description": "定积分的概念与基本性质"
+  },
+  {
+    "id": "GS3-04",
+    "parent_id": "GS3",
+    "code": "GS3-04",
+    "name": "定积分中值定理",
+    "level": 3,
+    "aliases_json": [
+      "定积分中值定理"
+    ],
+    "syllabus_ref": "定积分中值定理",
+    "description": "定积分中值定理"
+  },
+  {
+    "id": "GS3-05",
+    "parent_id": "GS3",
+    "code": "GS3-05",
+    "name": "积分上限的函数及其导数",
+    "level": 3,
+    "aliases_json": [
+      "积分上限的函数及其导数"
+    ],
+    "syllabus_ref": "积分上限的函数及其导数",
+    "description": "积分上限的函数及其导数"
+  },
+  {
+    "id": "GS3-06",
+    "parent_id": "GS3",
+    "code": "GS3-06",
+    "name": "牛顿-莱布尼茨公式",
+    "level": 3,
+    "aliases_json": [
+      "牛顿-莱布尼茨公式"
+    ],
+    "syllabus_ref": "牛顿-莱布尼茨公式",
+    "description": "牛顿-莱布尼茨公式"
+  },
+  {
+    "id": "GS3-07",
+    "parent_id": "GS3",
+    "code": "GS3-07",
+    "name": "换元积分法",
+    "level": 3,
+    "aliases_json": [
+      "换元积分法"
+    ],
+    "syllabus_ref": "换元积分法",
+    "description": "换元积分法"
+  },
+  {
+    "id": "GS3-08",
+    "parent_id": "GS3",
+    "code": "GS3-08",
+    "name": "分部积分法",
+    "level": 3,
+    "aliases_json": [
+      "分部积分法"
+    ],
+    "syllabus_ref": "分部积分法",
+    "description": "分部积分法"
+  },
+  {
+    "id": "GS3-09",
+    "parent_id": "GS3",
+    "code": "GS3-09",
+    "name": "有理函数的积分",
+    "level": 3,
+    "aliases_json": [
+      "有理函数的积分"
+    ],
+    "syllabus_ref": "有理函数的积分",
+    "description": "有理函数的积分"
+  },
+  {
+    "id": "GS3-10",
+    "parent_id": "GS3",
+    "code": "GS3-10",
+    "name": "三角函数有理式的积分",
+    "level": 3,
+    "aliases_json": [
+      "三角函数有理式的积分"
+    ],
+    "syllabus_ref": "三角函数有理式的积分",
+    "description": "三角函数有理式的积分"
+  },
+  {
+    "id": "GS3-11",
+    "parent_id": "GS3",
+    "code": "GS3-11",
+    "name": "简单无理函数的积分",
+    "level": 3,
+    "aliases_json": [
+      "简单无理函数的积分"
+    ],
+    "syllabus_ref": "简单无理函数的积分",
+    "description": "简单无理函数的积分"
+  },
+  {
+    "id": "GS3-12",
+    "parent_id": "GS3",
+    "code": "GS3-12",
+    "name": "反常（广义）积分",
+    "level": 3,
+    "aliases_json": [
+      "反常（广义）积分"
+    ],
+    "syllabus_ref": "反常（广义）积分",
+    "description": "反常（广义）积分"
+  },
+  {
+    "id": "GS3-13",
+    "parent_id": "GS3",
+    "code": "GS3-13",
+    "name": "反常积分的收敛判别",
+    "level": 3,
+    "aliases_json": [
+      "反常积分的收敛判别"
+    ],
+    "syllabus_ref": "反常积分的收敛判别",
+    "description": "反常积分的收敛判别"
+  },
+  {
+    "id": "GS3-14",
+    "parent_id": "GS3",
+    "code": "GS3-14",
+    "name": "定积分的几何应用（面积、弧长、旋转体体积与侧面积）",
+    "level": 3,
+    "aliases_json": [
+      "定积分的几何应用（面积、弧长、旋转体体积与侧面积）"
+    ],
+    "syllabus_ref": "定积分的几何应用（面积、弧长、旋转体体积与侧面积）",
+    "description": "定积分的几何应用（面积、弧长、旋转体体积与侧面积）"
+  },
+  {
+    "id": "GS3-15",
+    "parent_id": "GS3",
+    "code": "GS3-15",
+    "name": "定积分的物理应用（功、引力、压力、质心、形心）",
+    "level": 3,
+    "aliases_json": [
+      "定积分的物理应用（功、引力、压力、质心、形心）"
+    ],
+    "syllabus_ref": "定积分的物理应用（功、引力、压力、质心、形心）",
+    "description": "定积分的物理应用（功、引力、压力、质心、形心）"
+  },
+  {
+    "id": "GS3-16",
+    "parent_id": "GS3",
+    "code": "GS3-16",
+    "name": "函数的平均值",
+    "level": 3,
+    "aliases_json": [
+      "函数的平均值"
+    ],
+    "syllabus_ref": "函数的平均值",
+    "description": "函数的平均值"
+  },
+  {
+    "id": "GS4-01",
+    "parent_id": "GS4",
+    "code": "GS4-01",
+    "name": "多元函数的概念",
+    "level": 3,
+    "aliases_json": [
+      "多元函数的概念"
+    ],
+    "syllabus_ref": "多元函数的概念",
+    "description": "多元函数的概念"
+  },
+  {
+    "id": "GS4-02",
+    "parent_id": "GS4",
+    "code": "GS4-02",
+    "name": "二元函数的几何意义",
+    "level": 3,
+    "aliases_json": [
+      "二元函数的几何意义"
+    ],
+    "syllabus_ref": "二元函数的几何意义",
+    "description": "二元函数的几何意义"
+  },
+  {
+    "id": "GS4-03",
+    "parent_id": "GS4",
+    "code": "GS4-03",
+    "name": "二元函数的极限与连续",
+    "level": 3,
+    "aliases_json": [
+      "二元函数的极限与连续"
+    ],
+    "syllabus_ref": "二元函数的极限与连续",
+    "description": "二元函数的极限与连续"
+  },
+  {
+    "id": "GS4-04",
+    "parent_id": "GS4",
+    "code": "GS4-04",
+    "name": "有界闭区域上二元连续函数的性质",
+    "level": 3,
+    "aliases_json": [
+      "有界闭区域上二元连续函数的性质"
+    ],
+    "syllabus_ref": "有界闭区域上二元连续函数的性质",
+    "description": "有界闭区域上二元连续函数的性质"
+  },
+  {
+    "id": "GS4-05",
+    "parent_id": "GS4",
+    "code": "GS4-05",
+    "name": "偏导数",
+    "level": 3,
+    "aliases_json": [
+      "偏导数"
+    ],
+    "syllabus_ref": "偏导数",
+    "description": "偏导数"
+  },
+  {
+    "id": "GS4-06",
+    "parent_id": "GS4",
+    "code": "GS4-06",
+    "name": "全微分",
+    "level": 3,
+    "aliases_json": [
+      "全微分"
+    ],
+    "syllabus_ref": "全微分",
+    "description": "全微分"
+  },
+  {
+    "id": "GS4-07",
+    "parent_id": "GS4",
+    "code": "GS4-07",
+    "name": "多元复合函数求导",
+    "level": 3,
+    "aliases_json": [
+      "多元复合函数求导"
+    ],
+    "syllabus_ref": "多元复合函数求导",
+    "description": "多元复合函数求导"
+  },
+  {
+    "id": "GS4-08",
+    "parent_id": "GS4",
+    "code": "GS4-08",
+    "name": "多元隐函数求导",
+    "level": 3,
+    "aliases_json": [
+      "多元隐函数求导"
+    ],
+    "syllabus_ref": "多元隐函数求导",
+    "description": "多元隐函数求导"
+  },
+  {
+    "id": "GS4-09",
+    "parent_id": "GS4",
+    "code": "GS4-09",
+    "name": "二阶偏导数",
+    "level": 3,
+    "aliases_json": [
+      "二阶偏导数"
+    ],
+    "syllabus_ref": "二阶偏导数",
+    "description": "二阶偏导数"
+  },
+  {
+    "id": "GS4-10",
+    "parent_id": "GS4",
+    "code": "GS4-10",
+    "name": "多元函数的极值",
+    "level": 3,
+    "aliases_json": [
+      "多元函数的极值"
+    ],
+    "syllabus_ref": "多元函数的极值",
+    "description": "多元函数的极值"
+  },
+  {
+    "id": "GS4-11",
+    "parent_id": "GS4",
+    "code": "GS4-11",
+    "name": "条件极值与拉格朗日乘数法",
+    "level": 3,
+    "aliases_json": [
+      "条件极值与拉格朗日乘数法"
+    ],
+    "syllabus_ref": "条件极值与拉格朗日乘数法",
+    "description": "条件极值与拉格朗日乘数法"
+  },
+  {
+    "id": "GS4-12",
+    "parent_id": "GS4",
+    "code": "GS4-12",
+    "name": "多元函数的最大值与最小值",
+    "level": 3,
+    "aliases_json": [
+      "多元函数的最大值与最小值"
+    ],
+    "syllabus_ref": "多元函数的最大值与最小值",
+    "description": "多元函数的最大值与最小值"
+  },
+  {
+    "id": "GS4-13",
+    "parent_id": "GS4",
+    "code": "GS4-13",
+    "name": "二重积分的概念与基本性质",
+    "level": 3,
+    "aliases_json": [
+      "二重积分的概念与基本性质"
+    ],
+    "syllabus_ref": "二重积分的概念与基本性质",
+    "description": "二重积分的概念与基本性质"
+  },
+  {
+    "id": "GS4-14",
+    "parent_id": "GS4",
+    "code": "GS4-14",
+    "name": "二重积分的中值定理",
+    "level": 3,
+    "aliases_json": [
+      "二重积分的中值定理"
+    ],
+    "syllabus_ref": "二重积分的中值定理",
+    "description": "二重积分的中值定理"
+  },
+  {
+    "id": "GS4-15",
+    "parent_id": "GS4",
+    "code": "GS4-15",
+    "name": "二重积分的计算（直角坐标）",
+    "level": 3,
+    "aliases_json": [
+      "二重积分的计算（直角坐标）"
+    ],
+    "syllabus_ref": "二重积分的计算（直角坐标）",
+    "description": "二重积分的计算（直角坐标）"
+  },
+  {
+    "id": "GS4-16",
+    "parent_id": "GS4",
+    "code": "GS4-16",
+    "name": "二重积分的计算（极坐标）",
+    "level": 3,
+    "aliases_json": [
+      "二重积分的计算（极坐标）"
+    ],
+    "syllabus_ref": "二重积分的计算（极坐标）",
+    "description": "二重积分的计算（极坐标）"
+  },
+  {
+    "id": "GS5-01",
+    "parent_id": "GS5",
+    "code": "GS5-01",
+    "name": "微分方程的基本概念（阶、解、通解、特解、初始条件）",
+    "level": 3,
+    "aliases_json": [
+      "微分方程的基本概念（阶、解、通解、特解、初始条件）"
+    ],
+    "syllabus_ref": "微分方程的基本概念（阶、解、通解、特解、初始条件）",
+    "description": "微分方程的基本概念（阶、解、通解、特解、初始条件）"
+  },
+  {
+    "id": "GS5-02",
+    "parent_id": "GS5",
+    "code": "GS5-02",
+    "name": "变量可分离的微分方程",
+    "level": 3,
+    "aliases_json": [
+      "变量可分离的微分方程"
+    ],
+    "syllabus_ref": "变量可分离的微分方程",
+    "description": "变量可分离的微分方程"
+  },
+  {
+    "id": "GS5-03",
+    "parent_id": "GS5",
+    "code": "GS5-03",
+    "name": "齐次微分方程",
+    "level": 3,
+    "aliases_json": [
+      "齐次微分方程"
+    ],
+    "syllabus_ref": "齐次微分方程",
+    "description": "齐次微分方程"
+  },
+  {
+    "id": "GS5-04",
+    "parent_id": "GS5",
+    "code": "GS5-04",
+    "name": "一阶线性微分方程",
+    "level": 3,
+    "aliases_json": [
+      "一阶线性微分方程"
+    ],
+    "syllabus_ref": "一阶线性微分方程",
+    "description": "一阶线性微分方程"
+  },
+  {
+    "id": "GS5-05",
+    "parent_id": "GS5",
+    "code": "GS5-05",
+    "name": "可降阶的高阶微分方程",
+    "level": 3,
+    "aliases_json": [
+      "可降阶的高阶微分方程"
+    ],
+    "syllabus_ref": "可降阶的高阶微分方程",
+    "description": "可降阶的高阶微分方程"
+  },
+  {
+    "id": "GS5-06",
+    "parent_id": "GS5",
+    "code": "GS5-06",
+    "name": "线性微分方程解的性质与解的结构",
+    "level": 3,
+    "aliases_json": [
+      "线性微分方程解的性质与解的结构"
+    ],
+    "syllabus_ref": "线性微分方程解的性质与解的结构",
+    "description": "线性微分方程解的性质与解的结构"
+  },
+  {
+    "id": "GS5-07",
+    "parent_id": "GS5",
+    "code": "GS5-07",
+    "name": "二阶常系数齐次线性微分方程",
+    "level": 3,
+    "aliases_json": [
+      "二阶常系数齐次线性微分方程"
+    ],
+    "syllabus_ref": "二阶常系数齐次线性微分方程",
+    "description": "二阶常系数齐次线性微分方程"
+  },
+  {
+    "id": "GS5-08",
+    "parent_id": "GS5",
+    "code": "GS5-08",
+    "name": "高于二阶的常系数齐次线性微分方程",
+    "level": 3,
+    "aliases_json": [
+      "高于二阶的常系数齐次线性微分方程"
+    ],
+    "syllabus_ref": "高于二阶的常系数齐次线性微分方程",
+    "description": "高于二阶的常系数齐次线性微分方程"
+  },
+  {
+    "id": "GS5-09",
+    "parent_id": "GS5",
+    "code": "GS5-09",
+    "name": "二阶常系数非齐次线性微分方程",
+    "level": 3,
+    "aliases_json": [
+      "二阶常系数非齐次线性微分方程"
+    ],
+    "syllabus_ref": "二阶常系数非齐次线性微分方程",
+    "description": "二阶常系数非齐次线性微分方程"
+  },
+  {
+    "id": "GS5-10",
+    "parent_id": "GS5",
+    "code": "GS5-10",
+    "name": "微分方程的简单应用",
+    "level": 3,
+    "aliases_json": [
+      "微分方程的简单应用"
+    ],
+    "syllabus_ref": "微分方程的简单应用",
+    "description": "微分方程的简单应用"
+  },
+  {
+    "id": "LA1-01",
+    "parent_id": "LA1",
+    "code": "LA1-01",
+    "name": "行列式的概念",
+    "level": 3,
+    "aliases_json": [
+      "行列式的概念"
+    ],
+    "syllabus_ref": "行列式的概念",
+    "description": "行列式的概念"
+  },
+  {
+    "id": "LA1-02",
+    "parent_id": "LA1",
+    "code": "LA1-02",
+    "name": "行列式的基本性质",
+    "level": 3,
+    "aliases_json": [
+      "行列式的基本性质"
+    ],
+    "syllabus_ref": "行列式的基本性质",
+    "description": "行列式的基本性质"
+  },
+  {
+    "id": "LA1-03",
+    "parent_id": "LA1",
+    "code": "LA1-03",
+    "name": "行列式按行（列）展开",
+    "level": 3,
+    "aliases_json": [
+      "行列式按行（列）展开"
+    ],
+    "syllabus_ref": "行列式按行（列）展开",
+    "description": "行列式按行（列）展开"
+  },
+  {
+    "id": "LA2-01",
+    "parent_id": "LA2",
+    "code": "LA2-01",
+    "name": "矩阵的概念与特殊矩阵（单位、数量、对角、三角、对称、反对称、正交）",
+    "level": 3,
+    "aliases_json": [
+      "矩阵的概念与特殊矩阵（单位、数量、对角、三角、对称、反对称、正交）"
+    ],
+    "syllabus_ref": "矩阵的概念与特殊矩阵（单位、数量、对角、三角、对称、反对称、正交）",
+    "description": "矩阵的概念与特殊矩阵（单位、数量、对角、三角、对称、反对称、正交）"
+  },
+  {
+    "id": "LA2-02",
+    "parent_id": "LA2",
+    "code": "LA2-02",
+    "name": "矩阵的线性运算",
+    "level": 3,
+    "aliases_json": [
+      "矩阵的线性运算"
+    ],
+    "syllabus_ref": "矩阵的线性运算",
+    "description": "矩阵的线性运算"
+  },
+  {
+    "id": "LA2-03",
+    "parent_id": "LA2",
+    "code": "LA2-03",
+    "name": "矩阵的乘法",
+    "level": 3,
+    "aliases_json": [
+      "矩阵的乘法"
+    ],
+    "syllabus_ref": "矩阵的乘法",
+    "description": "矩阵的乘法"
+  },
+  {
+    "id": "LA2-04",
+    "parent_id": "LA2",
+    "code": "LA2-04",
+    "name": "方阵的幂",
+    "level": 3,
+    "aliases_json": [
+      "方阵的幂"
+    ],
+    "syllabus_ref": "方阵的幂",
+    "description": "方阵的幂"
+  },
+  {
+    "id": "LA2-05",
+    "parent_id": "LA2",
+    "code": "LA2-05",
+    "name": "方阵乘积的行列式",
+    "level": 3,
+    "aliases_json": [
+      "方阵乘积的行列式"
+    ],
+    "syllabus_ref": "方阵乘积的行列式",
+    "description": "方阵乘积的行列式"
+  },
+  {
+    "id": "LA2-06",
+    "parent_id": "LA2",
+    "code": "LA2-06",
+    "name": "矩阵的转置",
+    "level": 3,
+    "aliases_json": [
+      "矩阵的转置"
+    ],
+    "syllabus_ref": "矩阵的转置",
+    "description": "矩阵的转置"
+  },
+  {
+    "id": "LA2-07",
+    "parent_id": "LA2",
+    "code": "LA2-07",
+    "name": "逆矩阵的概念与性质",
+    "level": 3,
+    "aliases_json": [
+      "逆矩阵的概念与性质"
+    ],
+    "syllabus_ref": "逆矩阵的概念与性质",
+    "description": "逆矩阵的概念与性质"
+  },
+  {
+    "id": "LA2-08",
+    "parent_id": "LA2",
+    "code": "LA2-08",
+    "name": "矩阵可逆的充分必要条件",
+    "level": 3,
+    "aliases_json": [
+      "矩阵可逆的充分必要条件"
+    ],
+    "syllabus_ref": "矩阵可逆的充分必要条件",
+    "description": "矩阵可逆的充分必要条件"
+  },
+  {
+    "id": "LA2-09",
+    "parent_id": "LA2",
+    "code": "LA2-09",
+    "name": "伴随矩阵",
+    "level": 3,
+    "aliases_json": [
+      "伴随矩阵"
+    ],
+    "syllabus_ref": "伴随矩阵",
+    "description": "伴随矩阵"
+  },
+  {
+    "id": "LA2-10",
+    "parent_id": "LA2",
+    "code": "LA2-10",
+    "name": "矩阵的初等变换",
+    "level": 3,
+    "aliases_json": [
+      "矩阵的初等变换"
+    ],
+    "syllabus_ref": "矩阵的初等变换",
+    "description": "矩阵的初等变换"
+  },
+  {
+    "id": "LA2-11",
+    "parent_id": "LA2",
+    "code": "LA2-11",
+    "name": "初等矩阵",
+    "level": 3,
+    "aliases_json": [
+      "初等矩阵"
+    ],
+    "syllabus_ref": "初等矩阵",
+    "description": "初等矩阵"
+  },
+  {
+    "id": "LA2-12",
+    "parent_id": "LA2",
+    "code": "LA2-12",
+    "name": "矩阵的秩",
+    "level": 3,
+    "aliases_json": [
+      "矩阵的秩"
+    ],
+    "syllabus_ref": "矩阵的秩",
+    "description": "矩阵的秩"
+  },
+  {
+    "id": "LA2-13",
+    "parent_id": "LA2",
+    "code": "LA2-13",
+    "name": "矩阵的等价",
+    "level": 3,
+    "aliases_json": [
+      "矩阵的等价"
+    ],
+    "syllabus_ref": "矩阵的等价",
+    "description": "矩阵的等价"
+  },
+  {
+    "id": "LA2-14",
+    "parent_id": "LA2",
+    "code": "LA2-14",
+    "name": "分块矩阵及其运算",
+    "level": 3,
+    "aliases_json": [
+      "分块矩阵及其运算"
+    ],
+    "syllabus_ref": "分块矩阵及其运算",
+    "description": "分块矩阵及其运算"
+  },
+  {
+    "id": "LA3-01",
+    "parent_id": "LA3",
+    "code": "LA3-01",
+    "name": "向量的概念",
+    "level": 3,
+    "aliases_json": [
+      "向量的概念"
+    ],
+    "syllabus_ref": "向量的概念",
+    "description": "向量的概念"
+  },
+  {
+    "id": "LA3-02",
+    "parent_id": "LA3",
+    "code": "LA3-02",
+    "name": "向量的线性组合与线性表示",
+    "level": 3,
+    "aliases_json": [
+      "向量的线性组合与线性表示"
+    ],
+    "syllabus_ref": "向量的线性组合与线性表示",
+    "description": "向量的线性组合与线性表示"
+  },
+  {
+    "id": "LA3-03",
+    "parent_id": "LA3",
+    "code": "LA3-03",
+    "name": "向量组的线性相关与线性无关",
+    "level": 3,
+    "aliases_json": [
+      "向量组的线性相关与线性无关"
+    ],
+    "syllabus_ref": "向量组的线性相关与线性无关",
+    "description": "向量组的线性相关与线性无关"
+  },
+  {
+    "id": "LA3-04",
+    "parent_id": "LA3",
+    "code": "LA3-04",
+    "name": "向量组的极大线性无关组",
+    "level": 3,
+    "aliases_json": [
+      "向量组的极大线性无关组"
+    ],
+    "syllabus_ref": "向量组的极大线性无关组",
+    "description": "向量组的极大线性无关组"
+  },
+  {
+    "id": "LA3-05",
+    "parent_id": "LA3",
+    "code": "LA3-05",
+    "name": "等价向量组",
+    "level": 3,
+    "aliases_json": [
+      "等价向量组"
+    ],
+    "syllabus_ref": "等价向量组",
+    "description": "等价向量组"
+  },
+  {
+    "id": "LA3-06",
+    "parent_id": "LA3",
+    "code": "LA3-06",
+    "name": "向量组的秩",
+    "level": 3,
+    "aliases_json": [
+      "向量组的秩"
+    ],
+    "syllabus_ref": "向量组的秩",
+    "description": "向量组的秩"
+  },
+  {
+    "id": "LA3-07",
+    "parent_id": "LA3",
+    "code": "LA3-07",
+    "name": "向量组的秩与矩阵的秩的关系",
+    "level": 3,
+    "aliases_json": [
+      "向量组的秩与矩阵的秩的关系"
+    ],
+    "syllabus_ref": "向量组的秩与矩阵的秩的关系",
+    "description": "向量组的秩与矩阵的秩的关系"
+  },
+  {
+    "id": "LA3-08",
+    "parent_id": "LA3",
+    "code": "LA3-08",
+    "name": "向量的内积",
+    "level": 3,
+    "aliases_json": [
+      "向量的内积"
+    ],
+    "syllabus_ref": "向量的内积",
+    "description": "向量的内积"
+  },
+  {
+    "id": "LA3-09",
+    "parent_id": "LA3",
+    "code": "LA3-09",
+    "name": "施密特正交规范化",
+    "level": 3,
+    "aliases_json": [
+      "施密特正交规范化"
+    ],
+    "syllabus_ref": "施密特正交规范化",
+    "description": "施密特正交规范化"
+  },
+  {
+    "id": "LA4-01",
+    "parent_id": "LA4",
+    "code": "LA4-01",
+    "name": "克拉默法则",
+    "level": 3,
+    "aliases_json": [
+      "克拉默法则"
+    ],
+    "syllabus_ref": "克拉默法则",
+    "description": "克拉默法则"
+  },
+  {
+    "id": "LA4-02",
+    "parent_id": "LA4",
+    "code": "LA4-02",
+    "name": "齐次线性方程组有非零解的充分必要条件",
+    "level": 3,
+    "aliases_json": [
+      "齐次线性方程组有非零解的充分必要条件"
+    ],
+    "syllabus_ref": "齐次线性方程组有非零解的充分必要条件",
+    "description": "齐次线性方程组有非零解的充分必要条件"
+  },
+  {
+    "id": "LA4-03",
+    "parent_id": "LA4",
+    "code": "LA4-03",
+    "name": "非齐次线性方程组有解的充分必要条件",
+    "level": 3,
+    "aliases_json": [
+      "非齐次线性方程组有解的充分必要条件"
+    ],
+    "syllabus_ref": "非齐次线性方程组有解的充分必要条件",
+    "description": "非齐次线性方程组有解的充分必要条件"
+  },
+  {
+    "id": "LA4-04",
+    "parent_id": "LA4",
+    "code": "LA4-04",
+    "name": "线性方程组解的性质与解的结构",
+    "level": 3,
+    "aliases_json": [
+      "线性方程组解的性质与解的结构"
+    ],
+    "syllabus_ref": "线性方程组解的性质与解的结构",
+    "description": "线性方程组解的性质与解的结构"
+  },
+  {
+    "id": "LA4-05",
+    "parent_id": "LA4",
+    "code": "LA4-05",
+    "name": "齐次线性方程组的基础解系与通解",
+    "level": 3,
+    "aliases_json": [
+      "齐次线性方程组的基础解系与通解"
+    ],
+    "syllabus_ref": "齐次线性方程组的基础解系与通解",
+    "description": "齐次线性方程组的基础解系与通解"
+  },
+  {
+    "id": "LA4-06",
+    "parent_id": "LA4",
+    "code": "LA4-06",
+    "name": "非齐次线性方程组的通解",
+    "level": 3,
+    "aliases_json": [
+      "非齐次线性方程组的通解"
+    ],
+    "syllabus_ref": "非齐次线性方程组的通解",
+    "description": "非齐次线性方程组的通解"
+  },
+  {
+    "id": "LA5-01",
+    "parent_id": "LA5",
+    "code": "LA5-01",
+    "name": "特征值与特征向量的概念、性质",
+    "level": 3,
+    "aliases_json": [
+      "特征值与特征向量的概念、性质"
+    ],
+    "syllabus_ref": "特征值与特征向量的概念、性质",
+    "description": "特征值与特征向量的概念、性质"
+  },
+  {
+    "id": "LA5-02",
+    "parent_id": "LA5",
+    "code": "LA5-02",
+    "name": "相似矩阵的概念与性质",
+    "level": 3,
+    "aliases_json": [
+      "相似矩阵的概念与性质"
+    ],
+    "syllabus_ref": "相似矩阵的概念与性质",
+    "description": "相似矩阵的概念与性质"
+  },
+  {
+    "id": "LA5-03",
+    "parent_id": "LA5",
+    "code": "LA5-03",
+    "name": "矩阵可相似对角化的充分必要条件",
+    "level": 3,
+    "aliases_json": [
+      "矩阵可相似对角化的充分必要条件"
+    ],
+    "syllabus_ref": "矩阵可相似对角化的充分必要条件",
+    "description": "矩阵可相似对角化的充分必要条件"
+  },
+  {
+    "id": "LA5-04",
+    "parent_id": "LA5",
+    "code": "LA5-04",
+    "name": "相似对角矩阵的求法",
+    "level": 3,
+    "aliases_json": [
+      "相似对角矩阵的求法"
+    ],
+    "syllabus_ref": "相似对角矩阵的求法",
+    "description": "相似对角矩阵的求法"
+  },
+  {
+    "id": "LA5-05",
+    "parent_id": "LA5",
+    "code": "LA5-05",
+    "name": "实对称矩阵的特征值与特征向量",
+    "level": 3,
+    "aliases_json": [
+      "实对称矩阵的特征值与特征向量"
+    ],
+    "syllabus_ref": "实对称矩阵的特征值与特征向量",
+    "description": "实对称矩阵的特征值与特征向量"
+  },
+  {
+    "id": "LA5-06",
+    "parent_id": "LA5",
+    "code": "LA5-06",
+    "name": "实对称矩阵的相似对角化",
+    "level": 3,
+    "aliases_json": [
+      "实对称矩阵的相似对角化"
+    ],
+    "syllabus_ref": "实对称矩阵的相似对角化",
+    "description": "实对称矩阵的相似对角化"
+  },
+  {
+    "id": "LA6-01",
+    "parent_id": "LA6",
+    "code": "LA6-01",
+    "name": "二次型及其矩阵表示",
+    "level": 3,
+    "aliases_json": [
+      "二次型及其矩阵表示"
+    ],
+    "syllabus_ref": "二次型及其矩阵表示",
+    "description": "二次型及其矩阵表示"
+  },
+  {
+    "id": "LA6-02",
+    "parent_id": "LA6",
+    "code": "LA6-02",
+    "name": "合同变换与合同矩阵",
+    "level": 3,
+    "aliases_json": [
+      "合同变换与合同矩阵"
+    ],
+    "syllabus_ref": "合同变换与合同矩阵",
+    "description": "合同变换与合同矩阵"
+  },
+  {
+    "id": "LA6-03",
+    "parent_id": "LA6",
+    "code": "LA6-03",
+    "name": "二次型的秩",
+    "level": 3,
+    "aliases_json": [
+      "二次型的秩"
+    ],
+    "syllabus_ref": "二次型的秩",
+    "description": "二次型的秩"
+  },
+  {
+    "id": "LA6-04",
+    "parent_id": "LA6",
+    "code": "LA6-04",
+    "name": "惯性定理",
+    "level": 3,
+    "aliases_json": [
+      "惯性定理"
+    ],
+    "syllabus_ref": "惯性定理",
+    "description": "惯性定理"
+  },
+  {
+    "id": "LA6-05",
+    "parent_id": "LA6",
+    "code": "LA6-05",
+    "name": "二次型的标准形与规范形",
+    "level": 3,
+    "aliases_json": [
+      "二次型的标准形与规范形"
+    ],
+    "syllabus_ref": "二次型的标准形与规范形",
+    "description": "二次型的标准形与规范形"
+  },
+  {
+    "id": "LA6-06",
+    "parent_id": "LA6",
+    "code": "LA6-06",
+    "name": "用正交变换化二次型为标准形",
+    "level": 3,
+    "aliases_json": [
+      "用正交变换化二次型为标准形"
+    ],
+    "syllabus_ref": "用正交变换化二次型为标准形",
+    "description": "用正交变换化二次型为标准形"
+  },
+  {
+    "id": "LA6-07",
+    "parent_id": "LA6",
+    "code": "LA6-07",
+    "name": "用配方法化二次型为标准形",
+    "level": 3,
+    "aliases_json": [
+      "用配方法化二次型为标准形"
+    ],
+    "syllabus_ref": "用配方法化二次型为标准形",
+    "description": "用配方法化二次型为标准形"
+  },
+  {
+    "id": "LA6-08",
+    "parent_id": "LA6",
+    "code": "LA6-08",
+    "name": "正定二次型与正定矩阵的判别",
+    "level": 3,
+    "aliases_json": [
+      "正定二次型与正定矩阵的判别"
+    ],
+    "syllabus_ref": "正定二次型与正定矩阵的判别",
+    "description": "正定二次型与正定矩阵的判别"
+  }
+]

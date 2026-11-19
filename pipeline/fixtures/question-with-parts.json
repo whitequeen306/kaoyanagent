@@ -1,0 +1,70 @@
+{
+  "id": "6f9b6c34-3f4f-4d9a-9c4e-3f2e0d9a1111",
+  "paper_id": null,
+  "seq_label": "S1",
+  "section": "solution",
+  "qtype": "free_response",
+  "stem_latex": "设 $\\alpha_1=(1,0,\\tfrac12)^{T}$，$\\alpha_2=(0,1,1)^{T}$，令 $A=(\\alpha_1,\\alpha_2,\\alpha_1+\\alpha_2)$，$G=(\\alpha_1,\\alpha_2)$。",
+  "sub_items_json": [
+    {
+      "label": "(1)",
+      "prompt_latex": "证明 $\\alpha_1,\\alpha_2$ 线性无关，并求 $A$ 的列向量组的秩。",
+      "answer_latex": "由前两行组成的二阶子式为 $1\\neq0$，故 $\\alpha_1,\\alpha_2$ 线性无关；又第三列为前两列之和，所以列秩为 $2$。",
+      "score_x2": 10
+    },
+    {
+      "label": "(2)",
+      "prompt_latex": "求矩阵 $H$，使得 $A=GH$。",
+      "answer_latex": "$H=\\begin{pmatrix}1&0&1\\\\0&1&1\\end{pmatrix}$。",
+      "score_x2": 10
+    }
+  ],
+  "options_json": null,
+  "answer_latex": "列秩为 $2$；$H=\\begin{pmatrix}1&0&1\\\\0&1&1\\end{pmatrix}$。",
+  "answer_source": "ai_verified",
+  "solution_latex": "利用二阶子式判定线性无关，再由列向量关系直接读出 $H$。",
+  "score_x2": 20,
+  "difficulty": "medium",
+  "difficulty_obs": null,
+  "difficulty_source": "fixture-synthetic-anchor",
+  "est_minutes": 8,
+  "has_figure": false,
+  "figure_asset_id": null,
+  "source": "ai",
+  "generator_meta_json": {
+    "purpose": "contract-fixture",
+    "generator": "manual",
+    "blind_solver_agreement": true
+  },
+  "rubric_json": {
+    "max_score_x2": 20,
+    "steps": [
+      {
+        "step": 1,
+        "desc": "给出能证明两个向量线性无关的二阶子式或等价论证",
+        "points_x2": 6,
+        "must": true,
+        "evidence_required": true
+      },
+      {
+        "step": 2,
+        "desc": "指出第三列等于前两列之和并得到列秩为 2",
+        "points_x2": 4,
+        "must": true,
+        "evidence_required": true
+      },
+      {
+        "step": 3,
+        "desc": "写出满足 A=GH 的矩阵 H，维数与数值均正确",
+        "points_x2": 10,
+        "must": true,
+        "evidence_required": true
+      }
+    ]
+  },
+  "rubric_source": "ai_verified",
+  "rubric_version": 1,
+  "content_hash": "fixture-2026-shared-stem-v1",
+  "status": "published",
+  "embedding_json": null
+}

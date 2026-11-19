@@ -1,0 +1,184 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api.schema.json",
+  "title": "Kaoyan Assistant API Contract v1",
+  "description": "All browser calls are same-origin and route through /functions/v1/app. Anonymous records are partitioned by device_id; every write requires Idempotency-Key and a server-issued device session.",
+  "errorCodes": {
+    "invalid_input": 400,
+    "unauthorized_device": 401,
+    "forbidden": 403,
+    "not_found": 404,
+    "state_conflict": 409,
+    "idempotency_conflict": 409,
+    "payload_too_large": 413,
+    "quota_exceeded": 429,
+    "model_unavailable": 503,
+    "storage_unavailable": 503,
+    "internal_error": 500
+  },
+  "routes": [
+    {
+      "name": "resolve_concepts",
+      "method": "POST",
+      "path": "/api/concepts/resolve",
+      "requestRequired": ["text"],
+      "requestProperties": {
+        "text": {"type": "string", "minLength": 1, "maxLength": 1000}
+      },
+      "responseItem": {
+        "term": "string",
+        "node_id": "uuid",
+        "level": "integer",
+        "expand_to": "subtree|leaf",
+        "leaf_ids": "uuid[]",
+        "candidate_count": "integer"
+      }
+    },
+    {
+      "name": "get_ai_settings",
+      "method": "GET",
+      "path": "/api/ai-settings",
+      "responseProperties": ["configured", "base_url", "model", "has_key", "key_hint"]
+    },
+    {
+      "name": "save_ai_settings",
+      "method": "POST",
+      "path": "/api/ai-settings",
+      "requestRequired": ["base_url", "model"],
+      "requestProperties": {
+        "base_url": {"type": "string", "maxLength": 500},
+        "api_key": {"type": "string", "maxLength": 500},
+        "model": {"type": "string", "maxLength": 200}
+      },
+      "responseProperties": ["settings", "latency_ms"]
+    },
+    {
+      "name": "compose_paper",
+      "method": "POST",
+      "path": "/api/papers/compose",
+      "requestRequired": ["concept_node_ids", "qtypes", "count", "source_mode", "mode", "difficulty"],
+      "requestProperties": {
+        "concept_node_ids": {"type": "array", "minItems": 1, "items": {"type": "string", "format": "uuid"}},
+        "qtypes": {"type": "array", "minItems": 1, "items": {"enum": ["single_choice", "fill_blank", "free_response"]}},
+        "count": {"type": "integer", "minimum": 1, "maximum": 30},
+        "source_mode": {"enum": ["real", "ai", "mixed"]},
+        "mode": {"enum": ["exam", "drill"]},
+        "difficulty": {"enum": ["easy", "medium", "hard"]},
+        "year_from": {"type": ["integer", "null"], "minimum": 2005, "maximum": 2026},
+        "year_to": {"type": ["integer", "null"], "minimum": 2005, "maximum": 2026},
+        "exclude_done": {"type": "boolean"}
+      },
+      "responseProperties": ["paper_instance_id", "items", "total_score_x2", "actual_ratio", "adjustments"]
+    },
+    {
+      "name": "list_my_papers",
+      "method": "GET",
+      "path": "/api/papers",
+      "responseProperties": ["items"]
+    },
+    {
+      "name": "get_paper",
+      "method": "GET",
+      "path": "/api/papers/{paper_instance_id}",
+      "responseProperties": ["id", "mode", "source_mode", "items_json", "total_score_x2", "status", "adjustments", "result"]
+    },
+    {
+      "name": "submit_answers",
+      "method": "POST",
+      "path": "/api/papers/{paper_instance_id}/submit",
+      "requestRequired": ["answers"],
+      "requestProperties": {
+        "answers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["question_id", "answer_raw"],
+            "properties": {
+              "question_id": {"type": "string", "format": "uuid"},
+              "answer_raw": {"type": "string", "maxLength": 20000},
+              "confirmed_latex": {"type": ["string", "null"]},
+              "duration_sec": {"type": ["integer", "null"], "minimum": 0}
+            }
+          }
+        }
+      },
+      "responseProperties": ["paper_instance_id", "score_x2", "max_score_x2", "score_rate_bp", "attempts", "diagnosis"]
+    },
+    {
+      "name": "recognize_answer",
+      "method": "POST",
+      "path": "/api/recognition",
+      "requestRequired": ["image_asset_id", "question_id"],
+      "responseProperties": ["recognized_latex", "confidence", "needs_confirmation"]
+    },
+    {
+      "name": "generate_variant",
+      "method": "POST",
+      "path": "/api/variants",
+      "requestRequired": ["items"],
+      "requestProperties": {
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 10,
+          "items": {
+            "type": "object",
+            "required": ["question_id", "count"],
+            "properties": {
+              "question_id": {"type": "string", "format": "uuid"},
+              "count": {"type": "integer", "minimum": 3, "maximum": 10}
+            }
+          }
+        }
+      },
+      "responseProperties": ["job_id", "status", "stage", "progress", "detail", "expected_count"]
+    },
+    {
+      "name": "delete_wrong_book_entry",
+      "method": "DELETE",
+      "path": "/api/wrong-book/{question_id}",
+      "responseProperties": ["deleted", "question_id"]
+    },
+    {
+      "name": "get_generation_job",
+      "method": "GET",
+      "path": "/api/jobs/{job_id}",
+      "responseProperties": ["id", "kind", "status", "progress", "result_json", "error"]
+    },
+    {
+      "name": "report_question",
+      "method": "POST",
+      "path": "/api/questions/{question_id}/reports",
+      "requestRequired": ["reason"],
+      "requestProperties": {
+        "reason": {"enum": ["wrong_answer", "unsolvable", "ambiguous", "out_of_syllabus", "duplicate"]},
+        "detail": {"type": ["string", "null"], "maxLength": 1000}
+      },
+      "responseProperties": ["report_id", "question_status"]
+    },
+    {
+      "name": "review_schedule",
+      "method": "GET",
+      "path": "/api/review/today",
+      "responseProperties": ["items", "count"]
+    },
+    {
+      "name": "metrics_current",
+      "method": "GET",
+      "path": "/api/metrics/current",
+      "responseProperties": ["metrics", "sample_sizes", "generated_at"]
+    },
+    {
+      "name": "metrics_trends",
+      "method": "GET",
+      "path": "/api/metrics/trends",
+      "responseProperties": ["series", "from", "to", "insufficient_data"]
+    },
+    {
+      "name": "metrics_public_paper",
+      "method": "GET",
+      "path": "/api/metrics/papers/{paper_instance_id}",
+      "responseProperties": ["id", "mode", "source_mode", "created_at", "total_score_x2", "actual_ratio", "concepts", "items", "note"]
+    }
+  ]
+}

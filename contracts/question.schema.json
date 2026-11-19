@@ -1,0 +1,292 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "question.schema.json",
+  "title": "Question",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "seq_label",
+    "section",
+    "qtype",
+    "stem_latex",
+    "answer_latex",
+    "answer_source",
+    "score_x2",
+    "difficulty",
+    "source",
+    "rubric_json",
+    "rubric_source",
+    "rubric_version",
+    "content_hash",
+    "status",
+    "has_figure"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "paper_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid"
+    },
+    "seq_label": {
+      "type": "string",
+      "minLength": 1
+    },
+    "section": {
+      "enum": [
+        "choice",
+        "blank",
+        "solution"
+      ]
+    },
+    "qtype": {
+      "enum": [
+        "single_choice",
+        "fill_blank",
+        "free_response"
+      ]
+    },
+    "stem_latex": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sub_items_json": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "$ref": "#/$defs/subItem"
+      }
+    },
+    "options_json": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "$ref": "#/$defs/option"
+      }
+    },
+    "answer_latex": {
+      "type": "string"
+    },
+    "answer_source": {
+      "enum": [
+        "official",
+        "ai_verified"
+      ]
+    },
+    "solution_latex": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "score_x2": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "difficulty": {
+      "enum": [
+        "easy",
+        "medium",
+        "hard"
+      ]
+    },
+    "difficulty_obs": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "score_rate_bp": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "sample_size": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "score_rate_bp",
+        "sample_size"
+      ],
+      "additionalProperties": false
+    },
+    "difficulty_source": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "est_minutes": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1
+    },
+    "has_figure": {
+      "type": "boolean"
+    },
+    "figure_asset_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "source": {
+      "enum": [
+        "real",
+        "ai"
+      ]
+    },
+    "generator_meta_json": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "rubric_json": {
+      "$ref": "#/$defs/rubric"
+    },
+    "rubric_source": {
+      "enum": [
+        "derived_official",
+        "ai_verified"
+      ]
+    },
+    "rubric_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "content_hash": {
+      "type": "string",
+      "minLength": 16
+    },
+    "status": {
+      "enum": [
+        "draft",
+        "reviewed",
+        "published",
+        "pending_review",
+        "hidden",
+        "rejected"
+      ]
+    },
+    "embedding_json": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "number"
+      }
+    }
+  },
+  "$defs": {
+    "subItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "label",
+        "prompt_latex",
+        "answer_latex",
+        "score_x2"
+      ],
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "prompt_latex": {
+          "type": "string",
+          "minLength": 1
+        },
+        "answer_latex": {
+          "type": "string"
+        },
+        "score_x2": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "option": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "label",
+        "latex"
+      ],
+      "properties": {
+        "label": {
+          "enum": [
+            "A",
+            "B",
+            "C",
+            "D"
+          ]
+        },
+        "latex": {
+          "type": "string"
+        }
+      }
+    },
+    "rubric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_score_x2",
+        "steps"
+      ],
+      "properties": {
+        "max_score_x2": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "step",
+              "desc",
+              "points_x2",
+              "evidence_required"
+            ],
+            "properties": {
+              "step": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "desc": {
+                "type": "string"
+              },
+              "points_x2": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "must": {
+                "type": "boolean"
+              },
+              "evidence_required": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

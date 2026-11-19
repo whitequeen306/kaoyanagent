@@ -1,0 +1,12 @@
+.env.local
+.env
+node_modules/
+web/node_modules/
+web/dist/
+pipeline/output/
+pipeline/reference/
+__pycache__/
+*.pyc
+data/
+数学二/
+*.qoder.site
