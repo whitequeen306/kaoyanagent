@@ -1,14 +1,16 @@
 import { localQuestions } from './fixtures.mjs';
 import { realKnowledge, realQuestions } from './real-data.mjs';
+import { normalizeAiQuestions } from './ai-question-pool.mjs';
 export function createLocalRuntime(options = {}) {
   return {
-    questions: [...localQuestions.filter(q => q.source === 'ai'), ...realQuestions].map(q => ({ ...q })),
+    questions: normalizeAiQuestions([...localQuestions.filter(q => q.source === 'ai'), ...realQuestions].map(q => ({ ...q }))),
     knowledge: realKnowledge.map(n => ({ ...n })),
     papers: [], attempts: [], wrongBook: [], reports: [], jobs: [], llmCalls: [],
-    idempotency: new Map(), deviceSessions: new Map(), aiSettings: new Map(), agentStates: new Map(), composeStats: { success: 0, failure: 0 },
+    idempotency: new Map(), deviceSessions: new Map(), aiSettings: new Map(), agentStates: new Map(), aiQuestionReservations: new Map(), composeStats: { success: 0, failure: 0 },
     usage: new Map(), generatedToday: 0,
     dataset: 'local-fixtures',
     llm: options.llm || null,
+    random: options.random || Math.random,
   };
 }
 export function checkQuota(runtime, deviceId, cost = 1) {

@@ -1,4 +1,5 @@
 import pg from 'pg';
+import { normalizeAiQuestions } from '../functions/ai-question-pool.mjs';
 
 const { Pool } = pg;
 const VERSION = 1;
@@ -48,7 +49,7 @@ export function createPersistence(runtime, connectionString) {
       for (const question of generated) {
         if (question?.id) byId.set(question.id, question);
       }
-      runtime.questions = [...byId.values()];
+      runtime.questions = normalizeAiQuestions([...byId.values()]);
       runtime.papers = (await pool.query('SELECT payload FROM papers')).rows.map(row => parse(row.payload));
       runtime.attempts = (await pool.query('SELECT payload FROM attempts')).rows.map(row => parse(row.payload));
       runtime.wrongBook = (await pool.query('SELECT payload FROM wrong_book')).rows.map(row => parse(row.payload));

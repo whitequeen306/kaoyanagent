@@ -27,6 +27,7 @@ type JobTask = {
   expectedCount?: number;
   generatedCount?: number;
   verifiedCount?: number;
+  reusedCount?: number;
   paper?: Paper;
   error?: string;
 };
@@ -196,7 +197,7 @@ export default function App() {
           id: queued.job_id, status: 'queued', stage: queued.stage || '排队中', progress: queued.progress || 0,
           requestLabel: `${sourceLabel(source)} · ${totalCount} 题`,
           detail: queued.detail, phase: queued.phase, expectedCount: queued.expected_count || 0,
-          generatedCount: 0, verifiedCount: 0,
+          generatedCount: 0, verifiedCount: 0, reusedCount: queued.reused_count || 0,
         }]);
         setJobsOpen(true);
         return;
@@ -221,6 +222,7 @@ export default function App() {
         expectedCount: current.expected_count ?? task.expectedCount,
         generatedCount: current.generated_count ?? task.generatedCount,
         verifiedCount: current.verified_count ?? task.verifiedCount,
+        reusedCount: current.reused_count ?? task.reusedCount,
         paper: current.paper || task.paper,
         error: current.error || undefined,
       };

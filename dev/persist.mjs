@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { normalizeAiQuestions } from '../functions/ai-question-pool.mjs';
 
 const VERSION = 1;
 const today = () => new Date().toISOString().slice(0, 10);
@@ -51,7 +52,7 @@ export function createPersistence(runtime, file) {
           .map(row => parse(row.payload, null)).filter(Boolean);
         const byId = new Map(runtime.questions.map(question => [question.id, question]));
         for (const question of generated) byId.set(question.id, question);
-        runtime.questions = [...byId.values()];
+        runtime.questions = normalizeAiQuestions([...byId.values()]);
         runtime.papers = db.prepare('SELECT payload FROM papers').all().map(row => parse(row.payload, null)).filter(Boolean);
         runtime.attempts = db.prepare('SELECT payload FROM attempts').all().map(row => parse(row.payload, null)).filter(Boolean);
         runtime.wrongBook = db.prepare('SELECT payload FROM wrong_book').all().map(row => parse(row.payload, null)).filter(Boolean);

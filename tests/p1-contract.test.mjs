@@ -151,6 +151,60 @@ test('AI paper job advances through generation, blind solve and assembly', async
   assert.equal(runtime.questions.filter(q => q.source === 'ai' && !q.is_fixture).length, 2);
 });
 
+test('AI paper reuses the highest-confidence question per slot and generates the rest', async () => {
+  let calls = 0;
+  let nextRandom = [0.1, 0.9];
+  const runtime = createLocalRuntime({
+    random: () => nextRandom.shift() ?? 0.9,
+    llm: async () => {
+      calls += 1;
+      if (calls === 1) return JSON.stringify({ items: [{
+        qtype: 'single_choice', stem_latex: '$x+1=2$（ ）',
+        options: [{ label: 'A', latex: '$0$' }, { label: 'B', latex: '$1$' }, { label: 'C', latex: '$2$' }, { label: 'D', latex: '$3$' }],
+        answer_latex: 'B', knowledge_code: 'GS1-01', exam_point: '函数概念', difficulty: 'easy', explanation: '移项。', solution_steps: [],
+      }] });
+      return JSON.stringify({ answers: [{ index: 1, answer_latex: 'B' }] });
+    },
+  });
+  const leaf = runtime.knowledge.find(node => node.code === 'GS1-01');
+  const reusableQuestion = (id, confidence, stem) => ({
+    id, seq_label: 'AI', year: null, section: 'choice', qtype: 'single_choice', stem_latex: stem,
+    options_json: [{ label: 'A', latex: '$0$' }, { label: 'B', latex: '$1$' }, { label: 'C', latex: '$2$' }, { label: 'D', latex: '$3$' }],
+    sub_items_json: null, answer_latex: 'B', answer_source: 'ai_verified', solution_latex: null,
+    score_x2: 10, difficulty: 'easy', source: 'ai', difficulty_source: 'model_anchor_2019',
+    generator_meta_json: { exam_point_raw: '函数概念', approach_raw: '已验证', solution_steps: [] },
+    rubric_json: null, rubric_version: null, content_hash: `reusable-${id}`, status: 'published', is_fixture: false,
+    knowledge: [{ code: leaf.code, role: 'main', weight: 100 }], confidence,
+  });
+  const highConfidence = reusableQuestion(crypto.randomUUID(), 90, '$x+1=2$（高置信度）');
+  const lowConfidence = reusableQuestion(crypto.randomUUID(), 40, '$x+1=2$（低置信度）');
+  runtime.questions.push(highConfidence, lowConfidence);
+  const handle = application(runtime);
+  const queued = await call(handle, '/api/papers/compose', { method: 'POST', key: key(), body: {
+    device_id: device, concept_node_ids: [leaf.id], count: 2,
+    type_counts: { single_choice: 2 }, source_mode: 'ai', mode: 'drill', difficulty: 'easy',
+  } });
+  assert.equal(queued.status, 202, JSON.stringify(queued.body));
+  const generated = await call(handle, `/api/jobs/${queued.body.job_id}/step`, { method: 'POST', body: {} });
+  assert.equal(generated.body.status, 'generating');
+  assert.equal(generated.body.reused_count, 1);
+  assert.equal(generated.body.generated_count, 1);
+  assert.ok(generated.body.detail.includes('抽取 1 道'));
+  const verified = await call(handle, `/api/jobs/${queued.body.job_id}/step`, { method: 'POST', body: {} });
+  assert.equal(verified.body.verified_count, 1);
+  const completed = await call(handle, `/api/jobs/${queued.body.job_id}/step`, { method: 'POST', body: {} });
+  assert.equal(completed.body.status, 'succeeded', JSON.stringify(completed.body));
+  assert.equal(completed.body.paper.items_json.length, 2);
+  assert.ok(completed.body.paper.items_json.some(item => item.question_id === highConfidence.id));
+  assert.equal(runtime.questions.find(question => question.id === highConfidence.id).confidence, 89);
+  assert.equal(runtime.questions.find(question => question.id === lowConfidence.id).confidence, 40);
+  const generatedQuestion = runtime.questions.find(question => !question.is_fixture && question.id !== highConfidence.id && question.id !== lowConfidence.id && question.source === 'ai');
+  assert.equal(generatedQuestion.qtype, 'single_choice');
+  assert.equal(generatedQuestion.difficulty, 'easy');
+  assert.deepEqual(generatedQuestion.knowledge, [{ code: leaf.code, role: 'main', weight: 100 }]);
+  assert.equal(generatedQuestion.confidence, 100);
+});
+
 test('mixed odd totals give the extra question to real sources', () => {
   const runtime = createLocalRuntime();
   const node = runtime.knowledge.find(n => n.code === 'GS1');
@@ -273,6 +327,40 @@ test('wrong-book variants form a paper, track mastery and unlock deletion', asyn
   assert.equal(deleted.status, 200, JSON.stringify(deleted.body));
   assert.equal((await call(handle, '/api/wrong-book')).body.items.length, 0);
 });
+test('variant jobs reuse matching AI questions before generating replacements', async () => {
+  const runtime = createLocalRuntime({ random: () => 0.1, llm: async () => { throw new Error('generation should not run'); } });
+  const source = runtime.questions.find(question => question.source === 'real' && question.qtype === 'single_choice');
+  runtime.wrongBook.push({ device_id: device, question_id: source.id, mastery: 0, next_review_at: new Date().toISOString() });
+  const makeVariant = (confidence, suffix) => ({
+    id: crypto.randomUUID(), seq_label: '变式', year: null, section: 'choice', qtype: source.qtype,
+    stem_latex: `复用变式 ${suffix}`, options_json: source.options_json, sub_items_json: null,
+    answer_latex: source.answer_latex, answer_source: 'ai_verified', solution_latex: null,
+    score_x2: source.score_x2, difficulty: source.difficulty, source: 'ai',
+    difficulty_source: 'variant_of_wrong', generator_meta_json: { variant_of: source.id, exam_point_raw: '函数概念', solution_steps: [] },
+    rubric_json: null, rubric_version: null, content_hash: `variant-reuse-${suffix}`, status: 'published', is_fixture: false,
+    knowledge: source.knowledge, confidence,
+  });
+  const high = makeVariant(90, '高');
+  const middle = makeVariant(50, '中');
+  const exhausted = makeVariant(0, '低');
+  runtime.questions.push(high, middle, exhausted);
+  const handle = application(runtime);
+  const queued = await call(handle, '/api/variants', { method: 'POST', key: key(), body: {
+    device_id: device, items: [{ question_id: source.id, count: 3 }],
+  } });
+  assert.equal(queued.status, 202, JSON.stringify(queued.body));
+  const planned = await call(handle, `/api/jobs/${queued.body.job_id}/step`, { method: 'POST', body: {} });
+  assert.equal(planned.body.status, 'verifying');
+  assert.equal(planned.body.reused_count, 3);
+  assert.equal(planned.body.generated_count, 0);
+  const completed = await call(handle, `/api/jobs/${queued.body.job_id}/step`, { method: 'POST', body: {} });
+  assert.equal(completed.body.status, 'succeeded', JSON.stringify(completed.body));
+  assert.deepEqual(completed.body.paper.items_json.map(item => item.question_id), [high.id, middle.id, exhausted.id]);
+  assert.equal(runtime.questions.find(question => question.id === high.id).confidence, 89);
+  assert.equal(runtime.questions.find(question => question.id === middle.id).confidence, 49);
+  assert.equal(runtime.questions.find(question => question.id === exhausted.id).confidence, 0);
+});
+
 test('local SQLite restores generated questions, papers, attempts and wrong book', () => {
   const file = path.join(os.tmpdir(), `kaoyan-state-${crypto.randomUUID()}.db`);
   const runtime = createLocalRuntime();
@@ -281,7 +369,7 @@ test('local SQLite restores generated questions, papers, attempts and wrong book
   const generated = {
     id: crypto.randomUUID(), source: 'ai', is_fixture: false, qtype: 'single_choice',
     stem_latex: '变式题', options_json: [], answer_latex: 'B', knowledge: [{ code: 'GS1' }],
-    generator_meta_json: { variant_of: 'source-question' }, status: 'published',
+    generator_meta_json: { variant_of: 'source-question' }, status: 'published', confidence: 37,
   };
   runtime.questions.push(generated);
   const paper = {
@@ -315,6 +403,7 @@ test('local SQLite restores generated questions, papers, attempts and wrong book
     createPersistence(restored, file).load();
     assert.equal(restored.questions.length, baseCount + 1);
     assert.equal(restored.questions.filter(question => question.id === generated.id).length, 1);
+    assert.equal(restored.questions.find(question => question.id === generated.id).confidence, 37);
     assert.equal(restored.papers.length, 1);
     assert.equal(restored.attempts.length, 1);
     assert.equal(restored.wrongBook.length, 1);

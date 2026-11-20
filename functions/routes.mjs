@@ -18,6 +18,7 @@ function jobView(job) {
     expected_count: job.expected_count || 0,
     generated_count: job.generated_count || 0,
     verified_count: job.verified_count || 0,
+    reused_count: job.reused_count || 0,
     error: job.error || null,
     paper: job.paper ? paperView(job.paper) : null,
   };

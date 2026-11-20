@@ -187,7 +187,7 @@
           }
         }
       },
-      "responseProperties": ["job_id", "status", "stage", "progress", "detail", "expected_count"]
+      "responseProperties": ["job_id", "status", "stage", "progress", "detail", "expected_count", "reused_count"]
     },
     {
       "name": "delete_wrong_book_entry",

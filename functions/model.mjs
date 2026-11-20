@@ -4,6 +4,8 @@ export const SOURCE_MODES = new Set(['real', 'ai', 'mixed']);
 export const MODES = new Set(['exam', 'drill']);
 export const DIFFICULTIES = new Set(['easy', 'medium', 'hard']);
 export const MAX_QUESTIONS = 30;
+export const AI_QUESTION_INITIAL_CONFIDENCE = 100;
+export const AI_QUESTION_CONFIDENCE_DECAY = 1;
 
 export class AppError extends Error {
   constructor(code, status = 400) { super(code); this.code = code; this.status = status; }

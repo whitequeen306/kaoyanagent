@@ -150,6 +150,11 @@
         "ai"
       ]
     },
+    "confidence": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
     "generator_meta_json": {
       "type": [
         "object",

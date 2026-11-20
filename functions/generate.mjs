@@ -3,6 +3,11 @@ import { AppError, fail, uuid, nowIso, normalizeText, QTYPES, DIFFICULTIES, MAX_
 import { publicQuestion } from './grade.mjs';
 import { composePaper } from './compose.mjs';
 import { providerFor } from './ai-settings.mjs';
+import {
+  commitReusableAiQuestions,
+  planReusableAiQuestions,
+  releaseReusableAiQuestions,
+} from './ai-question-pool.mjs';
 
 const GENERATE_SYSTEM = `你是考研数学二的命题老师。根据给定的知识点码、题型数量、难度出题。
 硬性要求：
@@ -72,6 +77,73 @@ function scoreFor(qtype) {
   return qtype === 'free_response' ? 20 : 10;
 }
 
+function countSlotsByType(slots) {
+  return slots.reduce((counts, slot) => {
+    counts[slot.qtype] = (counts[slot.qtype] || 0) + 1;
+    return counts;
+  }, {});
+}
+
+function paperReuseSlots(job, runtime) {
+  const leaves = subtreeLeaves(job.config.concept_node_ids, runtime.knowledge);
+  const allowedCodes = leaves.map(node => node.code);
+  return Object.entries(job.config.type_counts).flatMap(([qtype, count]) => Array.from({ length: count }, () => ({
+    qtype, difficulty: job.config.difficulty, allowedCodes,
+  })));
+}
+
+function variantReuseSlots(job) {
+  return job.config.sources.flatMap(source => Array.from({ length: source.count }, () => ({
+    qtype: source.qtype, difficulty: source.difficulty,
+    allowedCodes: source.knowledge.map(node => node.code), variantOf: source.question_id,
+  })));
+}
+
+function planPaperReuse(runtime, job) {
+  if (job.config.reuse_planned) return;
+  const plan = planReusableAiQuestions(runtime, job.id, paperReuseSlots(job, runtime));
+  job.config.reuse_planned = true;
+  job.config.reuse_question_ids = plan.reused.map(item => item.question.id);
+  job.config.reuse_count = plan.reused.length;
+  job.config.generation_type_counts = countSlotsByType(plan.toGenerate);
+  job.config.generation_count = plan.toGenerate.length;
+  job.reused_count = plan.reused.length;
+}
+
+function planVariantReuse(runtime, job) {
+  if (job.config.reuse_planned) return;
+  const plan = planReusableAiQuestions(runtime, job.id, variantReuseSlots(job));
+  const generationCounts = new Map();
+  for (const slot of plan.toGenerate) generationCounts.set(slot.variantOf, (generationCounts.get(slot.variantOf) || 0) + 1);
+  job.config.reuse_planned = true;
+  job.config.reuse_question_ids = plan.reused.map(item => item.question.id);
+  job.config.reuse_count = plan.reused.length;
+  job.config.generation_sources = job.config.sources
+    .map(source => ({ ...source, count: generationCounts.get(source.question_id) || 0 }))
+    .filter(source => source.count > 0);
+  job.config.generation_count = plan.toGenerate.length;
+  job.reused_count = plan.reused.length;
+}
+
+function reusableQuestions(runtime, job) {
+  return (job.config.reuse_question_ids || []).map(questionId => {
+    const question = runtime.questions.find(item => item.id === questionId);
+    if (!question) throw new AppError('ai_reused_question_missing', 500);
+    return question;
+  });
+}
+
+function commitReuse(runtime, job) {
+  commitReusableAiQuestions(runtime, job.id, job.config.reuse_question_ids || []);
+  job.config.reuse_committed = true;
+}
+
+function releaseReuse(runtime, job) {
+  if (!job.config.reuse_committed) {
+    releaseReusableAiQuestions(runtime, job.id, job.config.reuse_question_ids || []);
+  }
+}
+
 function choiceLetter(value) {
   const match = String(value || '').toUpperCase().match(/[A-D]/);
   return match ? match[0] : '';
@@ -109,7 +181,8 @@ function validateDrafts(items, counts, allowedCodes, difficultyFallback) {
       answer = choiceLetter(answer);
       if (!answer) throw new AppError('ai_invalid_item', 502);
     }
-    const code = allowedCodes.includes(item.knowledge_code) ? item.knowledge_code : allowedCodes[0];
+    if (!allowedCodes.includes(item.knowledge_code)) throw new AppError('ai_invalid_item', 502);
+    const code = item.knowledge_code;
     byType[item.qtype] = (byType[item.qtype] || 0) + 1;
     drafts.push({
       id: uuid(), qtype: item.qtype, stem_latex: item.stem_latex,
@@ -117,7 +190,7 @@ function validateDrafts(items, counts, allowedCodes, difficultyFallback) {
       answer_latex: answer, knowledge_code: code,
       exam_point_raw: String(item.exam_point || ''),
       explanation: String(item.explanation || '').trim(),
-      difficulty: DIFFICULTIES.has(item.difficulty) ? item.difficulty : difficultyFallback,
+      difficulty: difficultyFallback,
       solution_steps: Array.isArray(item.solution_steps) ? item.solution_steps.filter(step => typeof step === 'string' && step.trim()).slice(0, 5) : [],
       score_x2: scoreFor(item.qtype), source: 'ai', status: 'published',
       content_hash: `ai-${uuid()}`,
@@ -201,6 +274,7 @@ function buildVariantQuestion(draft) {
     generator_meta_json: quality, rubric_json: null, rubric_version: null,
     content_hash: draft.content_hash, status: 'published', is_fixture: false,
     knowledge: [{ code: draft.knowledge_code, role: 'main', weight: 100 }],
+    confidence: 100,
   };
 }
 
@@ -234,7 +308,7 @@ export function createVariantJob(runtime, request, deviceId) {
   });
   const job = {
     id: uuid(), device_id: deviceId, kind: 'variant', status: 'queued', stage: '排队中',
-    progress: 0, phase: 'queued', expected_count: total, generated_count: 0, verified_count: 0,
+    progress: 0, phase: 'queued', expected_count: total, generated_count: 0, verified_count: 0, reused_count: 0,
     detail: `已加入队列：为 ${items.length} 道错题生成 ${total} 道仿真题`,
     config: { origin: 'variant', items, sources, total, mode: 'drill', source_mode: 'ai' },
     drafts: null, ai_items: null, paper: null, error: null,
@@ -246,31 +320,44 @@ export function createVariantJob(runtime, request, deviceId) {
 
 export async function advanceVariantJob(runtime, job) {
   if (job.status === 'succeeded' || job.status === 'failed') return job;
-  const llm = providerFor(runtime, job.device_id);
   job.updated_at = nowIso();
   try {
-    if (!llm) throw new AppError('llm_not_configured', 409);
     if (job.status === 'queued') {
+      planVariantReuse(runtime, job);
+      if (!job.config.generation_count) {
+        job.drafts = [];
+        job.ai_items = [];
+        job.status = 'verifying';
+        job.stage = '组装试卷';
+        job.progress = 80;
+        job.phase = 'assembling';
+        job.detail = `已抽取 ${job.reused_count} 道已有仿真题，准备生成错题练习卷`;
+        return job;
+      }
+      const llm = providerFor(runtime, job.device_id);
+      if (!llm) throw new AppError('llm_not_configured', 409);
       job.phase = 'generating';
       job.stage = '生成仿真题';
       job.progress = 8;
-      job.detail = `正在为 ${job.config.items.length} 道错题生成 ${job.config.total} 道仿真题…`;
+      job.detail = `已抽取 ${job.reused_count} 道已有仿真题，正在为 ${job.config.items.length} 道错题生成 ${job.config.generation_count} 道新题…`;
       const raw = await llm([
         { role: 'system', content: VARIANT_SYSTEM },
-        { role: 'user', content: variantPrompt(job.config.sources) },
+        { role: 'user', content: variantPrompt(job.config.generation_sources) },
       ], { temperature: 0.5, maxTokens: 8000 });
       const parsed = parseJson(raw);
       if (!Array.isArray(parsed.items)) throw new AppError('ai_invalid_json', 502);
-      job.drafts = validateVariantDrafts(parsed.items, job.config.sources);
+      job.drafts = validateVariantDrafts(parsed.items, job.config.generation_sources);
       job.generated_count = job.drafts.length;
       job.phase = 'format_check';
       job.stage = '校验题目格式';
       job.progress = 35;
-      job.detail = `已生成 ${job.drafts.length}/${job.config.total} 道仿真题，题型、选项和知识点格式校验通过`;
+      job.detail = `已生成 ${job.drafts.length}/${job.config.generation_count} 道新题，题型、选项和知识点格式校验通过`;
       job.status = 'generating';
       return job;
     }
     if (job.status === 'generating') {
+      const llm = providerFor(runtime, job.device_id);
+      if (!llm) throw new AppError('llm_not_configured', 409);
       job.phase = 'self_test';
       job.stage = '做题自测';
       job.progress = 50;
@@ -289,14 +376,20 @@ export async function advanceVariantJob(runtime, job) {
       job.phase = 'assembling';
       job.stage = '组装试卷';
       job.progress = 90;
-      job.detail = `正在按错题分组编排 ${job.ai_items.length} 道仿真题…`;
+      job.detail = `正在按错题分组编排 ${job.reused_count + job.ai_items.length} 道仿真题…`;
       const order = new Map(job.config.items.map((item, index) => [item.question_id, index]));
-      const aiItems = job.ai_items.map(draft => ({
-        question_id: draft.id, question: publicQuestion(buildVariantQuestion(draft)),
-        fullQuestion: buildVariantQuestion(draft), score_x2: draft.score_x2,
-        source_order: order.get(draft.variant_of) ?? 99,
+      const reusedItems = reusableQuestions(runtime, job).map(question => ({
+        question_id: question.id, question: publicQuestion(question), fullQuestion: question,
+        score_x2: question.score_x2, source_order: order.get(question.generator_meta_json?.variant_of) ?? 99,
       }));
-      aiItems.sort((a, b) => a.source_order - b.source_order);
+      const generatedItems = job.ai_items.map(draft => {
+        const fullQuestion = buildVariantQuestion(draft);
+        return {
+          question_id: draft.id, question: publicQuestion(fullQuestion), fullQuestion,
+          score_x2: draft.score_x2, source_order: order.get(draft.variant_of) ?? 99,
+        };
+      });
+      const aiItems = [...reusedItems, ...generatedItems].sort((a, b) => a.source_order - b.source_order);
       const items = aiItems.map(item => ({ question_id: item.question_id, question: item.question, score_x2: item.score_x2 }));
       const paper = {
         id: uuid(), device_id: job.device_id, mode: 'drill', source_mode: 'ai', origin: 'variant',
@@ -305,23 +398,25 @@ export async function advanceVariantJob(runtime, job) {
         items_json: items,
         total_score_x2: items.reduce((sum, item) => sum + item.score_x2, 0),
         status: 'draft', created_at: nowIso(), submitted_at: null,
-        adjustments: [`为 ${job.config.items.length} 道错题生成 ${items.length} 道仿真题，已通过盲解校验。`],
+        adjustments: [`为 ${job.config.items.length} 道错题复用 ${reusedItems.length} 道、生成 ${generatedItems.length} 道仿真题，已通过盲解校验。`],
         actual_ratio: { real: 0, ai: items.length },
         dataset: runtime.dataset || 'production',
       };
-      for (const item of aiItems) runtime.questions.push(item.fullQuestion);
+      for (const item of generatedItems) runtime.questions.push(item.fullQuestion);
       runtime.papers.push(paper);
+      commitReuse(runtime, job);
       runtime.composeStats.success += 1;
       job.paper = paper;
       job.status = 'succeeded';
       job.stage = '完成';
       job.phase = 'done';
       job.progress = 100;
-      job.detail = `已完成：${items.length} 道仿真题，卷面 ${paper.total_score_x2 / 2} 分`;
+      job.detail = `已完成：${items.length} 道仿真题（复用 ${reusedItems.length} 道），卷面 ${paper.total_score_x2 / 2} 分`;
       return job;
     }
     throw new AppError('ai_job_bad_state', 500);
   } catch (error) {
+    releaseReuse(runtime, job);
     job.status = 'failed';
     job.stage = '失败';
     job.phase = 'failed';
@@ -352,7 +447,7 @@ export function createPaperJob(runtime, request, deviceId) {
   const job = {
     id: uuid(), device_id: deviceId, kind: 'paper', status: 'queued', stage: '排队中',
     progress: 0, phase: 'queued',
-    expected_count: aiTotal, generated_count: 0, verified_count: 0,
+    expected_count: aiTotal, generated_count: 0, verified_count: 0, reused_count: 0,
     detail: aiTotal
       ? `已加入队列：需生成 ${aiTotal} 道 AI 题（${describeCounts(aiCounts)}）`
       : '本卷题量较少，未分配 AI 题，将直接准备真题',
@@ -366,10 +461,8 @@ export function createPaperJob(runtime, request, deviceId) {
 
 export async function advancePaperJob(runtime, job) {
   if (job.status === 'succeeded' || job.status === 'failed') return job;
-  const llm = providerFor(runtime, job.device_id);
   job.updated_at = nowIso();
   try {
-    if (!llm) throw new AppError('llm_not_configured', 409);
     if (job.status === 'queued') {
       if (!job.config.ai_count) {
         job.drafts = [];
@@ -381,27 +474,40 @@ export async function advancePaperJob(runtime, job) {
         job.detail = '正在准备真题内容并计算试卷结构…';
         return job;
       }
+      planPaperReuse(runtime, job);
+      if (!job.config.generation_count) {
+        job.drafts = [];
+        job.ai_items = [];
+        job.status = 'verifying';
+        job.stage = '组装试卷';
+        job.progress = 80;
+        job.phase = 'assembling';
+        job.detail = `已抽取 ${job.reused_count} 道已有仿真题，准备合并试卷…`;
+        return job;
+      }
       const leaves = subtreeLeaves(job.config.concept_node_ids, runtime.knowledge);
       const allowed = leaves.map(node => node.code);
       const leafText = leaves.map(node => `${node.code} ${node.name}`).join('\n');
       const realCount = job.config.count - job.config.ai_count;
-      const prompt = `知识点码表（每题 knowledge_code 必须从中选择）：\n${leafText}\n\n本卷共 ${job.config.count} 题，其中真题 ${realCount} 题、AI 原创 ${job.config.ai_count} 题。\nAI 需要生成：${JSON.stringify(job.config.type_counts)}\n难度：${job.config.difficulty}\n模式：${job.config.mode}\n请严格按数量出题。`;
+      const prompt = `知识点码表（每题 knowledge_code 必须从中选择）：\n${leafText}\n\n本卷共 ${job.config.count} 题，其中真题 ${realCount} 题、AI 原创 ${job.config.ai_count} 题。\n已有仿真题抽取：${job.reused_count} 道。\nAI 需要生成：${JSON.stringify(job.config.generation_type_counts)}\n难度：${job.config.difficulty}\n模式：${job.config.mode}\n请严格按数量出题。`;
       job.phase = 'generating';
       job.stage = '生成题目';
       job.progress = 8;
-      job.detail = `正在生成 ${job.config.ai_count} 道题（${describeCounts(job.config.type_counts)}），完成后自动校验格式…`;
+      job.detail = `已抽取 ${job.reused_count} 道已有仿真题，正在生成 ${job.config.generation_count} 道新题（${describeCounts(job.config.generation_type_counts)}）…`;
+      const llm = providerFor(runtime, job.device_id);
+      if (!llm) throw new AppError('llm_not_configured', 409);
       const raw = await llm([
         { role: 'system', content: GENERATE_SYSTEM },
         { role: 'user', content: prompt },
       ], { temperature: 0.4, maxTokens: 8000 });
       const parsed = parseJson(raw);
       if (!Array.isArray(parsed.items)) throw new AppError('ai_invalid_json', 502);
-      job.drafts = validateDrafts(parsed.items, job.config.type_counts, allowed, job.config.difficulty || 'medium');
+      job.drafts = validateDrafts(parsed.items, job.config.generation_type_counts, allowed, job.config.difficulty || 'medium');
       job.generated_count = job.drafts.length;
       job.phase = 'format_check';
       job.stage = '校验题目格式';
       job.progress = 35;
-      job.detail = `已生成 ${job.drafts.length}/${job.config.ai_count} 道题，选择题选项、答案和知识点格式均已通过校验`;
+      job.detail = `已抽取 ${job.reused_count} 道已有仿真题并生成 ${job.drafts.length}/${job.config.generation_count} 道新题，选择题选项、答案和知识点格式均已通过校验`;
       job.status = 'generating';
       return job;
     }
@@ -414,6 +520,8 @@ export async function advancePaperJob(runtime, job) {
       job.stage = '做题自测';
       job.progress = 50;
       job.detail = `正在独立重做 ${job.drafts.length} 道题，逐题核对题干与标准答案…`;
+      const llm = providerFor(runtime, job.device_id);
+      if (!llm) throw new AppError('llm_not_configured', 409);
       const raw = await llm([
         { role: 'system', content: SOLVE_SYSTEM },
         { role: 'user', content: JSON.stringify({ questions: solveInput }) },
@@ -448,12 +556,13 @@ export async function advancePaperJob(runtime, job) {
         }
       }
       const realTotal = Object.values(realCounts).reduce((sum, n) => sum + n, 0);
+      const reusedQuestions = reusableQuestions(runtime, job);
       job.phase = 'assembling';
       job.stage = '组装试卷';
       job.progress = 90;
       job.detail = job.config.source_mode === 'mixed'
-        ? `正在合并 ${realTotal} 道真题与 ${job.ai_items.length} 道 AI 题，排序并计算分值…`
-        : `正在整理 ${job.ai_items.length} 道 AI 题，排序并计算分值…`;
+        ? `正在合并 ${realTotal} 道真题与 ${reusedQuestions.length + job.ai_items.length} 道 AI 题，排序并计算分值…`
+        : `正在整理 ${reusedQuestions.length + job.ai_items.length} 道 AI 题，排序并计算分值…`;
       let realItems = [];
       let adjustments = [];
       if (job.config.source_mode === 'mixed') {
@@ -467,7 +576,10 @@ export async function advancePaperJob(runtime, job) {
         realItems = realPaper.items_json;
         adjustments = realPaper.adjustments;
       }
-      const aiItems = job.ai_items.map(draft => {
+      const reusedItems = reusedQuestions.map(question => ({
+        question_id: question.id, question: publicQuestion(question), score_x2: question.score_x2,
+      }));
+      const generatedItems = job.ai_items.map(draft => {
         const quality = {
           score_source: 'ai_derived', exam_point_raw: draft.exam_point_raw,
           approach_raw: draft.explanation, solution_steps: draft.solution_steps,
@@ -481,10 +593,11 @@ export async function advancePaperJob(runtime, job) {
           source: 'ai', difficulty_obs: null, difficulty_source: 'model_anchor_2019',
           generator_meta_json: quality, rubric_json: null, rubric_version: null,
           content_hash: draft.content_hash, status: 'published', is_fixture: false,
-          knowledge: [{ code: draft.knowledge_code, role: 'main', weight: 100 }],
+          knowledge: [{ code: draft.knowledge_code, role: 'main', weight: 100 }], confidence: 100,
         };
         return { question_id: draft.id, question: publicQuestion(fullQuestion), fullQuestion, score_x2: draft.score_x2 };
       });
+      const aiItems = [...reusedItems, ...generatedItems];
       const items = [
         ...realItems,
         ...aiItems.map(item => ({ question_id: item.question_id, question: item.question, score_x2: item.score_x2 })),
@@ -499,26 +612,27 @@ export async function advancePaperJob(runtime, job) {
         items_json: items,
         total_score_x2: items.reduce((sum, item) => sum + item.score_x2, 0),
         status: 'draft', created_at: nowIso(), submitted_at: null,
-        adjustments: [...adjustments, ...(aiItems.length ? [`AI 生成 ${aiItems.length} 题，已通过盲解校验。`] : ['题量较少，本卷未分配 AI 原创题。'])],
+        adjustments: [...adjustments, ...(aiItems.length ? [`AI 题复用 ${reusedItems.length} 道、生成 ${generatedItems.length} 道，生成题已通过盲解校验。`] : ['题量较少，本卷未分配 AI 原创题。'])],
         actual_ratio: { real: realItems.length, ai: aiItems.length },
         dataset: runtime.dataset || 'production',
       };
-      for (const item of aiItems) {
-        // Persist the full generated question, including answer and explanation.
+      for (const item of generatedItems) {
         runtime.questions.push(item.fullQuestion);
       }
       runtime.papers.push(paper);
+      commitReuse(runtime, job);
       runtime.composeStats.success += 1;
       job.paper = paper;
       job.status = 'succeeded';
       job.stage = '完成';
       job.phase = 'done';
       job.progress = 100;
-      job.detail = `已完成：${items.length} 道题，卷面 ${paper.total_score_x2 / 2} 分`;
+      job.detail = `已完成：${items.length} 道题（复用 ${reusedItems.length} 道），卷面 ${paper.total_score_x2 / 2} 分`;
       return job;
     }
     throw new AppError('ai_job_bad_state', 500);
   } catch (error) {
+    releaseReuse(runtime, job);
     job.status = 'failed';
     job.stage = '失败';
     job.phase = 'failed';
