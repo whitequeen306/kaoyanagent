@@ -99,15 +99,22 @@ function variantReuseSlots(job) {
   })));
 }
 
+function recordReusePlan(job, plan, generationConfig) {
+  job.config = {
+    ...job.config,
+    reuse_planned: true,
+    reuse_question_ids: plan.reused.map(item => item.question.id),
+    reuse_count: plan.reused.length,
+    generation_count: plan.toGenerate.length,
+    ...generationConfig,
+  };
+  job.reused_count = plan.reused.length;
+}
+
 function planPaperReuse(runtime, job) {
   if (job.config.reuse_planned) return;
   const plan = planReusableAiQuestions(runtime, job.id, paperReuseSlots(job, runtime));
-  job.config.reuse_planned = true;
-  job.config.reuse_question_ids = plan.reused.map(item => item.question.id);
-  job.config.reuse_count = plan.reused.length;
-  job.config.generation_type_counts = countSlotsByType(plan.toGenerate);
-  job.config.generation_count = plan.toGenerate.length;
-  job.reused_count = plan.reused.length;
+  recordReusePlan(job, plan, { generation_type_counts: countSlotsByType(plan.toGenerate) });
 }
 
 function planVariantReuse(runtime, job) {
@@ -115,14 +122,10 @@ function planVariantReuse(runtime, job) {
   const plan = planReusableAiQuestions(runtime, job.id, variantReuseSlots(job));
   const generationCounts = new Map();
   for (const slot of plan.toGenerate) generationCounts.set(slot.variantOf, (generationCounts.get(slot.variantOf) || 0) + 1);
-  job.config.reuse_planned = true;
-  job.config.reuse_question_ids = plan.reused.map(item => item.question.id);
-  job.config.reuse_count = plan.reused.length;
-  job.config.generation_sources = job.config.sources
+  const generationSources = job.config.sources
     .map(source => ({ ...source, count: generationCounts.get(source.question_id) || 0 }))
     .filter(source => source.count > 0);
-  job.config.generation_count = plan.toGenerate.length;
-  job.reused_count = plan.reused.length;
+  recordReusePlan(job, plan, { generation_sources: generationSources });
 }
 
 function reusableQuestions(runtime, job) {
@@ -136,6 +139,12 @@ function reusableQuestions(runtime, job) {
 function commitReuse(runtime, job) {
   commitReusableAiQuestions(runtime, job.id, job.config.reuse_question_ids || []);
   job.config.reuse_committed = true;
+}
+
+function jobProvider(runtime, job) {
+  const llm = providerFor(runtime, job.device_id);
+  if (!llm) throw new AppError('llm_not_configured', 409);
+  return llm;
 }
 
 function releaseReuse(runtime, job) {
@@ -350,8 +359,7 @@ export async function advanceVariantJob(runtime, job) {
         job.detail = `已抽取 ${job.reused_count} 道已有仿真题，准备生成错题练习卷`;
         return job;
       }
-      const llm = providerFor(runtime, job.device_id);
-      if (!llm) throw new AppError('llm_not_configured', 409);
+      const llm = jobProvider(runtime, job);
       job.phase = 'generating';
       job.stage = '生成仿真题';
       job.progress = 8;
@@ -372,8 +380,7 @@ export async function advanceVariantJob(runtime, job) {
       return job;
     }
     if (job.status === 'generating') {
-      const llm = providerFor(runtime, job.device_id);
-      if (!llm) throw new AppError('llm_not_configured', 409);
+      const llm = jobProvider(runtime, job);
       job.phase = 'self_test';
       job.stage = '做题自测';
       job.progress = 50;
@@ -511,8 +518,7 @@ export async function advancePaperJob(runtime, job) {
       job.stage = '生成题目';
       job.progress = 8;
       job.detail = `已抽取 ${job.reused_count} 道已有仿真题，正在生成 ${job.config.generation_count} 道新题（${describeCounts(job.config.generation_type_counts)}）…`;
-      const llm = providerFor(runtime, job.device_id);
-      if (!llm) throw new AppError('llm_not_configured', 409);
+      const llm = jobProvider(runtime, job);
       const raw = await llm([
         { role: 'system', content: GENERATE_SYSTEM },
         { role: 'user', content: prompt },
@@ -537,8 +543,7 @@ export async function advancePaperJob(runtime, job) {
       job.stage = '做题自测';
       job.progress = 50;
       job.detail = `正在独立重做 ${job.drafts.length} 道题，逐题核对题干与标准答案…`;
-      const llm = providerFor(runtime, job.device_id);
-      if (!llm) throw new AppError('llm_not_configured', 409);
+      const llm = jobProvider(runtime, job);
       const raw = await llm([
         { role: 'system', content: SOLVE_SYSTEM },
         { role: 'user', content: JSON.stringify({ questions: solveInput }) },
