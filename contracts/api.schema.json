@@ -124,7 +124,7 @@
         "year_to": {"type": ["integer", "null"], "minimum": 2005, "maximum": 2026},
         "exclude_done": {"type": "boolean"}
       },
-      "responseProperties": ["paper_instance_id", "items", "total_score_x2", "actual_ratio", "adjustments"]
+      "responseProperties": ["paper_instance_id", "job_id", "status", "stage", "progress", "detail", "expected_count", "generated_count", "verified_count", "reused_count", "items", "total_score_x2", "actual_ratio", "adjustments"]
     },
     {
       "name": "list_my_papers",

@@ -4,8 +4,8 @@ import { gradeSubmission, submissionSummary, publicQuestion, reviewQuestion } fr
 import { listWrongBook, todayReview, similarQuestions, variantMastery } from './review.mjs';
 import { currentMetrics, metricTrends } from './metrics.mjs';
 import { checkQuota } from './runtime.mjs';
-import { advancePaperJob, advanceVariantJob, createPaperJob, createVariantJob } from './generate.mjs';
-import { publicAiSettings, providerFor, saveAiSettings, settingsFor } from './ai-settings.mjs';
+import { advancePaperJob, advanceVariantJob, createPaperJob, createVariantJob, discardJob, ensureJobCanStart } from './generate.mjs';
+import { publicAiSettings, saveAiSettings, settingsFor } from './ai-settings.mjs';
 import { getAgentState, saveProfile, savePreferences, saveAgentSummary, clearAgentSummary, updateStudyPlan } from './agent-store.mjs';
 import { advanceAgentTask, confirmAgentTask, createAgentTask, publicAgentTask } from './agent.mjs';
 
@@ -143,10 +143,13 @@ export function application(runtime) {
     }
     if (path === '/api/papers/compose' && request.method === 'POST') {
       if (input.source_mode !== 'real') {
-        if (!providerFor(runtime, deviceId)) fail('llm_not_configured', 409);
         const queued = idempotent(runtime, request, deviceId, 'compose', input, () => {
-          if (!checkQuota(runtime, deviceId, 2)) fail('quota_exceeded', 429);
           const job = createPaperJob(runtime, { ...input, device_id: deviceId }, deviceId);
+          ensureJobCanStart(runtime, job);
+          if (!checkQuota(runtime, deviceId, 2)) {
+            discardJob(runtime, job);
+            fail('quota_exceeded', 429);
+          }
           return { job_id: job.id, ...jobView(job) };
         });
         return json(queued, 202);
@@ -304,12 +307,11 @@ export function application(runtime) {
       });
     }
     if (path === '/api/variants' && request.method === 'POST') {
-      if (!providerFor(runtime, deviceId)) fail('llm_not_configured', 409);
       const result = idempotent(runtime, request, deviceId, 'variant', input, () => {
         const job = createVariantJob(runtime, input, deviceId);
+        ensureJobCanStart(runtime, job);
         if (!checkQuota(runtime, deviceId, 2)) {
-          const index = runtime.jobs.findIndex(item => item.id === job.id);
-          if (index >= 0) runtime.jobs.splice(index, 1);
+          discardJob(runtime, job);
           fail('quota_exceeded', 429);
         }
         return { job_id: job.id, ...jobView(job) };

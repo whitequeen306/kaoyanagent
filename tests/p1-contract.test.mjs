@@ -205,6 +205,35 @@ test('AI paper reuses the highest-confidence question per slot and generates the
   assert.equal(generatedQuestion.confidence, 100);
 });
 
+test('AI paper completes from reusable questions without a model provider', async () => {
+  const runtime = createLocalRuntime({ random: () => 0.1 });
+  const leaf = runtime.knowledge.find(node => node.code === 'GS1-01');
+  const reusable = {
+    id: crypto.randomUUID(), seq_label: 'AI', year: null, section: 'choice', qtype: 'single_choice',
+    stem_latex: '$x+1=2$（复用）',
+    options_json: [{ label: 'A', latex: '$0$' }, { label: 'B', latex: '$1$' }, { label: 'C', latex: '$2$' }, { label: 'D', latex: '$3$' }],
+    sub_items_json: null, answer_latex: 'B', answer_source: 'ai_verified', solution_latex: null,
+    score_x2: 10, difficulty: 'easy', source: 'ai', difficulty_source: 'model_anchor_2019',
+    generator_meta_json: { exam_point_raw: '函数概念', approach_raw: '移项。', solution_steps: [] },
+    rubric_json: null, rubric_version: null, content_hash: 'reusable-without-model', status: 'published', is_fixture: false,
+    knowledge: [{ code: leaf.code, role: 'main', weight: 100 }], confidence: 100,
+  };
+  runtime.questions.push(reusable);
+  const handle = application(runtime);
+  const queued = await call(handle, '/api/papers/compose', { method: 'POST', key: key(), body: {
+    device_id: device, concept_node_ids: [leaf.id], count: 1,
+    type_counts: { single_choice: 1 }, source_mode: 'ai', mode: 'drill', difficulty: 'easy',
+  } });
+  assert.equal(queued.status, 202, JSON.stringify(queued.body));
+  await call(handle, `/api/jobs/${queued.body.job_id}/step`, { method: 'POST', body: {} });
+  const completed = await call(handle, `/api/jobs/${queued.body.job_id}/step`, { method: 'POST', body: {} });
+  assert.equal(completed.status, 200, JSON.stringify(completed.body));
+  assert.equal(completed.body.status, 'succeeded', JSON.stringify(completed.body));
+  assert.equal(completed.body.reused_count, 1);
+  assert.equal(completed.body.paper.items_json[0].question_id, reusable.id);
+  assert.equal(runtime.questions.find(question => question.id === reusable.id).confidence, 99);
+});
+
 test('mixed odd totals give the extra question to real sources', () => {
   const runtime = createLocalRuntime();
   const node = runtime.knowledge.find(n => n.code === 'GS1');
@@ -328,7 +357,7 @@ test('wrong-book variants form a paper, track mastery and unlock deletion', asyn
   assert.equal((await call(handle, '/api/wrong-book')).body.items.length, 0);
 });
 test('variant jobs reuse matching AI questions before generating replacements', async () => {
-  const runtime = createLocalRuntime({ random: () => 0.1, llm: async () => { throw new Error('generation should not run'); } });
+  const runtime = createLocalRuntime({ random: () => 0.1 });
   const source = runtime.questions.find(question => question.source === 'real' && question.qtype === 'single_choice');
   runtime.wrongBook.push({ device_id: device, question_id: source.id, mastery: 0, next_review_at: new Date().toISOString() });
   const makeVariant = (confidence, suffix) => ({

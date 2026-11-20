@@ -144,6 +144,19 @@ function releaseReuse(runtime, job) {
   }
 }
 
+export function discardJob(runtime, job) {
+  releaseReuse(runtime, job);
+  const index = runtime.jobs.indexOf(job);
+  if (index >= 0) runtime.jobs.splice(index, 1);
+}
+
+export function ensureJobCanStart(runtime, job) {
+  if (job.config.generation_count && !providerFor(runtime, job.device_id)) {
+    discardJob(runtime, job);
+    fail('llm_not_configured', 409);
+  }
+}
+
 function choiceLetter(value) {
   const match = String(value || '').toUpperCase().match(/[A-D]/);
   return match ? match[0] : '';
@@ -182,13 +195,15 @@ function validateDrafts(items, counts, allowedCodes, difficultyFallback) {
       if (!answer) throw new AppError('ai_invalid_item', 502);
     }
     if (!allowedCodes.includes(item.knowledge_code)) throw new AppError('ai_invalid_item', 502);
+    const examPoint = String(item.exam_point || '').trim();
+    if (!examPoint) throw new AppError('ai_invalid_item', 502);
     const code = item.knowledge_code;
     byType[item.qtype] = (byType[item.qtype] || 0) + 1;
     drafts.push({
       id: uuid(), qtype: item.qtype, stem_latex: item.stem_latex,
       options_json: item.qtype === 'single_choice' ? item.options : null,
       answer_latex: answer, knowledge_code: code,
-      exam_point_raw: String(item.exam_point || ''),
+      exam_point_raw: examPoint,
       explanation: String(item.explanation || '').trim(),
       difficulty: difficultyFallback,
       solution_steps: Array.isArray(item.solution_steps) ? item.solution_steps.filter(step => typeof step === 'string' && step.trim()).slice(0, 5) : [],
@@ -314,6 +329,7 @@ export function createVariantJob(runtime, request, deviceId) {
     drafts: null, ai_items: null, paper: null, error: null,
     created_at: nowIso(), updated_at: nowIso(),
   };
+  planVariantReuse(runtime, job);
   runtime.jobs.push(job);
   return job;
 }
@@ -455,6 +471,7 @@ export function createPaperJob(runtime, request, deviceId) {
     drafts: null, ai_items: null, paper: null, error: null,
     created_at: nowIso(), updated_at: nowIso(),
   };
+  planPaperReuse(runtime, job);
   runtime.jobs.push(job);
   return job;
 }
