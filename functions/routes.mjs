@@ -6,6 +6,8 @@ import { currentMetrics, metricTrends } from './metrics.mjs';
 import { checkQuota } from './runtime.mjs';
 import { advancePaperJob, advanceVariantJob, createPaperJob, createVariantJob } from './generate.mjs';
 import { publicAiSettings, providerFor, saveAiSettings, settingsFor } from './ai-settings.mjs';
+import { getAgentState, saveProfile, savePreferences, saveAgentSummary, clearAgentSummary, updateStudyPlan } from './agent-store.mjs';
+import { advanceAgentTask, confirmAgentTask, createAgentTask, publicAgentTask } from './agent.mjs';
 
 function json(value, status = 200) { return Response.json(value, { status }); }
 function paperView(paper) { const { device_id, ...rest } = paper; return rest; }
@@ -69,6 +71,7 @@ export function application(runtime) {
     const path = url.pathname.replace(/^\/(?:functions\/v1\/)?(?:app|app-d[0-9a-f]{32})/, '') || '/';
     if (path === '/api/health' && request.method === 'GET') return json({ ok: true, mode: 'local' });
     const input = request.method === 'GET' ? Object.fromEntries(url.searchParams) : await body(request);
+    let match;
     const deviceId = input.device_id || request.headers.get('x-device-id');
     assertDeviceId(deviceId);
     if (path === '/api/session' && request.method === 'POST') {
@@ -86,6 +89,47 @@ export function application(runtime) {
     }
     if (path === '/api/ai-settings' && request.method === 'POST') {
       return json(await saveAiSettings(runtime, deviceId, input, settingsFor(runtime, deviceId)));
+    }
+    if (path === '/api/agent/state' && request.method === 'GET') {
+      const state = getAgentState(runtime, deviceId);
+      return json({
+        user_profile: state.profile,
+        agent_summary: { text: state.agent_summary, updated_at: state.agent_summary_updated_at, source: 'agent_inference' },
+        preferences: state.preferences, plans: state.plans,
+        conversations: state.conversations.map(conversation => ({ id: conversation.id, title: conversation.title, created_at: conversation.created_at, updated_at: conversation.updated_at, message_count: conversation.messages.length })),
+        tasks: state.tasks.slice().sort((a, b) => String(b.created_at).localeCompare(String(a.created_at))).map(publicAgentTask),
+      });
+    }
+    if (path === '/api/agent/profile' && request.method === 'POST') return json({ user_profile: saveProfile(runtime, deviceId, input) });
+    if (path === '/api/agent/preferences' && request.method === 'POST') return json({ preferences: savePreferences(runtime, deviceId, input) });
+    if (path === '/api/agent/summary' && request.method === 'POST') return json({ agent_summary: saveAgentSummary(runtime, deviceId, input) });
+    if (path === '/api/agent/summary' && request.method === 'DELETE') return json({ agent_summary: clearAgentSummary(runtime, deviceId) });
+    if (path === '/api/agent/tasks' && request.method === 'POST') {
+      const task = createAgentTask(runtime, deviceId, input);
+      return json(publicAgentTask(task), 202);
+    }
+    match = path.match(/^\/api\/agent\/tasks\/([0-9a-fA-F-]{36})\/confirm$/);
+    if (match && request.method === 'POST') {
+      return json(publicAgentTask(confirmAgentTask(runtime, deviceId, match[1].toLowerCase(), input.approve === true)));
+    }
+    match = path.match(/^\/api\/agent\/tasks\/([0-9a-fA-F-]{36})(?:\/step)?$/);
+    if (match && request.method === 'GET') {
+      const task = getAgentState(runtime, deviceId).tasks.find(item => item.id === match[1].toLowerCase());
+      if (!task) fail('not_found', 404);
+      return json(publicAgentTask(task));
+    }
+    if (match && request.method === 'POST') {
+      const task = getAgentState(runtime, deviceId).tasks.find(item => item.id === match[1].toLowerCase());
+      if (!task) fail('not_found', 404);
+      return json(publicAgentTask(await advanceAgentTask(runtime, task)));
+    }
+    match = path.match(/^\/api\/agent\/plans\/([0-9a-fA-F-]{36})$/);
+    if (match && request.method === 'PATCH') return json({ plan: updateStudyPlan(runtime, deviceId, match[1].toLowerCase(), input) });
+    match = path.match(/^\/api\/agent\/conversations\/([0-9a-fA-F-]{36})$/);
+    if (match && request.method === 'GET') {
+      const conversation = getAgentState(runtime, deviceId).conversations.find(item => item.id === match[1].toLowerCase());
+      if (!conversation) fail('not_found', 404);
+      return json(conversation);
     }
     if (path === '/api/concepts/resolve' && request.method === 'POST') {
       const text = String(input.text || '').trim();
@@ -152,7 +196,7 @@ export function application(runtime) {
         });
       return json({ items });
     }
-    let match = path.match(/^\/api\/papers\/([0-9a-fA-F-]{36})$/);
+    match = path.match(/^\/api\/papers\/([0-9a-fA-F-]{36})$/);
     if (match && request.method === 'GET') {
       const paper = runtime.papers.find(p => p.id === match[1].toLowerCase() && p.device_id === deviceId);
       if (!paper) fail('not_found', 404);

@@ -33,6 +33,7 @@ function withDb(file, work) {
       CREATE TABLE IF NOT EXISTS device_sessions (device_id TEXT PRIMARY KEY, payload TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS ai_settings (device_id TEXT PRIMARY KEY, base_url TEXT NOT NULL, api_key TEXT NOT NULL, model TEXT NOT NULL, payload TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS usage (key TEXT PRIMARY KEY, value INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS agent_states (device_id TEXT PRIMARY KEY, payload TEXT NOT NULL, updated_at TEXT);
     `);
     return work(db);
   } finally {
@@ -59,6 +60,8 @@ export function createPersistence(runtime, file) {
           .map(row => [row.device_id, parse(row.payload, null) || {}]));
         runtime.aiSettings = new Map(db.prepare('SELECT device_id, payload FROM ai_settings').all()
           .map(row => [row.device_id, parse(row.payload, null) || {}]));
+        runtime.agentStates = new Map(db.prepare('SELECT device_id, payload FROM agent_states').all()
+          .map(row => [row.device_id, parse(row.payload, null) || {}]));
         const meta = new Map(db.prepare('SELECT key, value FROM meta').all().map(row => [row.key, row.value]));
         if (meta.get('version') !== String(VERSION)) return;
         if (meta.get('saved_date') === today()) {
@@ -81,7 +84,7 @@ export function createPersistence(runtime, file) {
       withDb(file, db => {
         db.exec('BEGIN IMMEDIATE');
         try {
-          db.exec('DELETE FROM generated_questions; DELETE FROM papers; DELETE FROM attempts; DELETE FROM wrong_book; DELETE FROM reports; DELETE FROM device_sessions; DELETE FROM ai_settings; DELETE FROM usage; DELETE FROM meta;');
+          db.exec('DELETE FROM generated_questions; DELETE FROM papers; DELETE FROM attempts; DELETE FROM wrong_book; DELETE FROM reports; DELETE FROM device_sessions; DELETE FROM ai_settings; DELETE FROM usage; DELETE FROM meta; DELETE FROM agent_states;');
           const insertQuestion = db.prepare('INSERT INTO generated_questions (id, payload) VALUES (?, ?)');
           for (const question of runtime.questions.filter(item => !baseQuestionIds.has(item.id))) {
             insertQuestion.run(question.id, JSON.stringify(question));
@@ -107,6 +110,10 @@ export function createPersistence(runtime, file) {
           const insertAiSettings = db.prepare('INSERT INTO ai_settings (device_id, base_url, api_key, model, payload) VALUES (?, ?, ?, ?, ?)');
           for (const [deviceId, settings] of runtime.aiSettings.entries()) {
             insertAiSettings.run(deviceId, settings.base_url, settings.api_key, settings.model, JSON.stringify(settings));
+          }
+          const insertAgentState = db.prepare('INSERT INTO agent_states (device_id, payload, updated_at) VALUES (?, ?, ?)');
+          for (const [deviceId, state] of runtime.agentStates.entries()) {
+            insertAgentState.run(deviceId, JSON.stringify(state), state.updated_at || null);
           }
           const insertUsage = db.prepare('INSERT INTO usage (key, value) VALUES (?, ?)');
           for (const [key, value] of runtime.usage.entries()) insertUsage.run(key, Number(value) || 0);

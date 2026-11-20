@@ -8,6 +8,7 @@ import { createLocalRuntime } from '../functions/runtime.mjs';
 import { composePaper } from '../functions/compose.mjs';
 import { createPaperJob } from '../functions/generate.mjs';
 import { createPersistence } from '../dev/persist.mjs';
+import { buildAgentContext, contextBudget, resolveModelProfile } from '../functions/agent-context.mjs';
 import { DatabaseSync } from 'node:sqlite';
 const device = 'test-device-0001';
 const key = () => `test-key-${crypto.randomUUID()}`;
@@ -362,6 +363,112 @@ test('AI settings are tested before saving and drive AI compose', async () => {
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+test('Agent separates profile, preferences and inference and executes real tools', async () => {
+  const runtime = createLocalRuntime();
+  const handle = application(runtime);
+  const saved = await call(handle, '/api/agent/profile', { method: 'POST', key: key(), body: {
+    device_id: device, exam_year: 2027, target_score: 120, foundation: '一般', stage: '强化', weekly_minutes: 600,
+  } });
+  assert.equal(saved.status, 200, JSON.stringify(saved.body));
+  const preferences = await call(handle, '/api/agent/preferences', { method: 'POST', key: key(), body: {
+    device_id: device, source_mode: 'real', question_count: 8, difficulty: 'hard',
+  } });
+  assert.equal(preferences.status, 200, JSON.stringify(preferences.body));
+  const state = await call(handle, '/api/agent/state');
+  assert.equal(state.body.user_profile.exam_year, 2027);
+  assert.equal(state.body.preferences.question_count, 8);
+  assert.equal(state.body.agent_summary.source, 'agent_inference');
+  const { executeAgentTool } = await import('../functions/agent-tools.mjs');
+  const wrong = runtime.questions.find(q => q.source === 'real' && q.qtype === 'single_choice');
+  runtime.wrongBook.push({ device_id: device, question_id: wrong.id, attempt_id: null, mastery: 0, next_review_at: new Date(Date.now() - 1000).toISOString() });
+  const wrongList = await executeAgentTool(runtime, device, 'list_wrong_questions', { limit: 5 });
+  assert.equal(wrongList.ok, true);
+  assert.equal(wrongList.data[0].question_id, wrong.id);
+  const detail = await executeAgentTool(runtime, device, 'get_question_detail', { question_id: wrong.id });
+  assert.ok(detail.data.answer);
+  const nodes = await executeAgentTool(runtime, device, 'list_knowledge_nodes', { query: '函数', limit: 5 });
+  assert.ok(nodes.data.length > 0);
+  assert.ok(nodes.data[0].id);
+  const context = buildAgentContext(runtime, device, { messages: [{ role: 'user', content: '帮我安排复习' }] }, '帮我安排复习');
+  assert.ok(context.messages[0].content.includes('用户明确填写的档案'));
+  assert.ok(context.messages[0].content.includes('Agent 自己总结的档案'));
+  assert.ok(context.messages[0].content.includes('用户偏好'));
+  assert.ok(context.messages.at(-1).content.includes('Asia/Shanghai'));
+  assert.ok(context.stats.input_budget > 0);
+  assert.equal(resolveModelProfile('unknown-model').known, false);
+});
+test('Agent tasks call tools and persist completed plans', async () => {
+  const runtime = createLocalRuntime();
+  let calls = 0;
+  runtime.llm = async () => {
+    calls += 1;
+    if (calls === 1) return JSON.stringify({ action: 'tool', tool: 'list_wrong_questions', args: { limit: 3 }, reply: '正在查看错题' });
+    if (calls === 2) return JSON.stringify({ action: 'tool', tool: 'create_study_plan', args: { title: '今日复习', goal: '巩固薄弱点', items: [{ title: '复习错题', minutes: 30 }], confirmed: true }, reply: '正在保存计划' });
+    return JSON.stringify({ action: 'respond', reply: '已安排今日复习', summary_update: '用户正在巩固错题。' });
+  };
+  const handle = application(runtime);
+  await call(handle, '/api/agent/profile', { method: 'POST', key: key(), body: { device_id: device, exam_year: 2026, foundation: '一般', stage: '强化' } });
+  const task = await call(handle, '/api/agent/tasks', { method: 'POST', key: key(), body: { device_id: device, goal: '帮我安排今天的复习' } });
+  assert.equal(task.status, 202, JSON.stringify(task.body));
+  let current;
+  for (let index = 0; index < 6; index += 1) {
+    current = await call(handle, `/api/agent/tasks/${task.body.id}/step`, { method: 'POST', body: {} });
+    if (['succeeded', 'failed', 'waiting_user', 'degraded'].includes(current.body.status)) break;
+  }
+  assert.equal(current.body.status, 'succeeded', JSON.stringify(current.body));
+  assert.equal(current.body.result.reply, '已安排今日复习');
+  assert.equal(current.body.steps.length, 2);
+  assert.equal(current.body.steps[0].tool, 'list_wrong_questions');
+  const state = await call(handle, '/api/agent/state');
+  assert.equal(state.body.plans.length, 1);
+  assert.equal(state.body.agent_summary.text, '用户正在巩固错题。');
+  const file = path.join(os.tmpdir(), `agent-state-${crypto.randomUUID()}.db`);
+  try {
+    createPersistence(runtime, file).save();
+    const restored = createLocalRuntime();
+    createPersistence(restored, file).load();
+    assert.equal(restored.agentStates.get(device).plans.length, 1);
+    assert.equal(restored.agentStates.get(device).agent_summary, '用户正在巩固错题。');
+    assert.equal(restored.agentStates.get(device).profile.exam_year, 2026);
+  } finally { if (fs.existsSync(file)) fs.unlinkSync(file); }
+});
+test('Agent waits for confirmation and resumes the same task', async () => {
+  const runtime = createLocalRuntime();
+  let calls = 0;
+  runtime.llm = async () => {
+    calls += 1;
+    if (calls === 1) return JSON.stringify({ action: 'ask', reply: '要生成 6 道练习卷吗？', requires_confirmation: true });
+    return JSON.stringify({ action: 'respond', reply: '已按确认结果执行。' });
+  };
+  const handle = application(runtime);
+  const created = await call(handle, '/api/agent/tasks', { method: 'POST', key: key(), body: { device_id: device, goal: '生成练习卷' } });
+  const waiting = await call(handle, `/api/agent/tasks/${created.body.id}/step`, { method: 'POST', body: {} });
+  assert.equal(waiting.body.status, 'waiting_user');
+  const confirmed = await call(handle, `/api/agent/tasks/${created.body.id}/confirm`, { method: 'POST', body: { approve: true } });
+  assert.equal(confirmed.body.status, 'queued');
+  assert.equal(confirmed.body.id, created.body.id);
+  const done = await call(handle, `/api/agent/tasks/${created.body.id}/step`, { method: 'POST', body: {} });
+  assert.equal(done.body.status, 'succeeded', JSON.stringify(done.body));
+  assert.equal(done.body.id, created.body.id);
+  const state = await call(handle, '/api/agent/state');
+  assert.equal(state.body.tasks[0].id, created.body.id);
+});
+test('Agent receives async job failure and can continue with a new plan', async () => {
+  const runtime = createLocalRuntime();
+  runtime.llm = async () => JSON.stringify({ action: 'respond', reply: '生成失败，我改用真题重新安排。' });
+  const handle = application(runtime);
+  const created = await call(handle, '/api/agent/tasks', { method: 'POST', key: key(), body: { device_id: device, goal: '生成一份 AI 仿真卷' } });
+  const task = runtime.agentStates.get(device).tasks.find(item => item.id === created.body.id);
+  task.pending_job = { id: 'failed-job-0001', tool: 'compose_paper' };
+  runtime.jobs.push({ id: 'failed-job-0001', device_id: device, kind: 'paper', status: 'failed', error: 'ai_blind_solve_mismatch' });
+  const failed = await call(handle, `/api/agent/tasks/${task.id}/step`, { method: 'POST', body: {} });
+  assert.equal(failed.body.status, 'queued');
+  assert.equal(failed.body.stage, '组卷失败，正在调整方案');
+  assert.ok(failed.body.context_state.tool_results.some(item => item.ok === false && item.summary.includes('盲解')));
+  const continued = await call(handle, `/api/agent/tasks/${task.id}/step`, { method: 'POST', body: {} });
+  assert.equal(continued.body.status, 'succeeded', JSON.stringify(continued.body));
+  assert.ok(continued.body.result.reply.includes('真题'));
 });
 test('idempotency, quotas and limits are enforced', async () => {
   const runtime = createLocalRuntime();

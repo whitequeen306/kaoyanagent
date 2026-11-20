@@ -53,6 +53,62 @@
       "responseProperties": ["settings", "latency_ms"]
     },
     {
+      "name": "get_agent_state",
+      "method": "GET",
+      "path": "/api/agent/state",
+      "responseProperties": ["user_profile", "agent_summary", "preferences", "plans", "conversations", "tasks"]
+    },
+    {
+      "name": "save_agent_profile",
+      "method": "POST",
+      "path": "/api/agent/profile",
+      "responseProperties": ["user_profile"]
+    },
+    {
+      "name": "save_agent_preferences",
+      "method": "POST",
+      "path": "/api/agent/preferences",
+      "responseProperties": ["preferences"]
+    },
+    {
+      "name": "save_agent_summary",
+      "method": "POST",
+      "path": "/api/agent/summary",
+      "responseProperties": ["agent_summary"]
+    },
+    {
+      "name": "create_agent_task",
+      "method": "POST",
+      "path": "/api/agent/tasks",
+      "requestRequired": ["goal"],
+      "responseProperties": ["id", "conversation_id", "status", "stage", "steps", "result"]
+    },
+    {
+      "name": "advance_agent_task",
+      "method": "POST",
+      "path": "/api/agent/tasks/{task_id}/step",
+      "responseProperties": ["id", "status", "stage", "steps", "result", "context_state"]
+    },
+    {
+      "name": "confirm_agent_task",
+      "method": "POST",
+      "path": "/api/agent/tasks/{task_id}/confirm",
+      "requestRequired": ["approve"],
+      "responseProperties": ["id", "status", "stage", "result"]
+    },
+    {
+      "name": "get_agent_conversation",
+      "method": "GET",
+      "path": "/api/agent/conversations/{conversation_id}",
+      "responseProperties": ["id", "messages", "summary", "updated_at"]
+    },
+    {
+      "name": "update_study_plan",
+      "method": "PATCH",
+      "path": "/api/agent/plans/{plan_id}",
+      "responseProperties": ["plan"]
+    },
+    {
       "name": "compose_paper",
       "method": "POST",
       "path": "/api/papers/compose",

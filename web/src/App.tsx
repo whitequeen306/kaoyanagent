@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { MathText } from './components/MathText';
 import { PdfPaper } from './components/PdfPaper';
+import { AgentPanel } from './components/AgentPanel';
 import { pdfFileName, pickPdfDestination, savePdfElement } from './lib/pdf';
 import { deviceId, difficultyLabel, formatScore, request } from './lib/api';
 import type { Difficulty, GradeResult, Knowledge, Paper, PaperMode, Qtype, SourceMode } from './types';
@@ -47,7 +48,7 @@ const qtypeLabel = (value: Qtype) => qtypeOptions.find(item => item.value === va
 const sourceLabel = (value: string) => sourceOptions.find(item => item.value === value)?.label || value;
 
 export default function App() {
-  const [view, setView] = useState<'compose' | 'paper' | 'wrong' | 'papers' | 'metrics'>('compose');
+  const [view, setView] = useState<'compose' | 'paper' | 'wrong' | 'papers' | 'metrics' | 'agent'>('compose');
   const [paperOrigin, setPaperOrigin] = useState<'compose' | 'papers'>('compose');
   const [knowledge, setKnowledge] = useState<Knowledge[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
@@ -470,7 +471,7 @@ export default function App() {
       <button className="brand" onClick={() => { setView('compose'); setResult(null); }}>
         <span className="brand-mark">∑</span><span><strong>研数</strong><small>考研数学二 · 智能练习</small></span>
       </button>
-      <nav><button onClick={() => setView('compose')}>组卷</button><button onClick={loadWrong}>错题本</button><button onClick={loadMyPapers}>我的试卷</button><button onClick={loadMetrics}>数据中心</button><button onClick={openSettings}>模型设置</button></nav>
+      <nav><button onClick={() => setView('compose')}>组卷</button><button onClick={() => setView('agent')}>学习助手</button><button onClick={loadWrong}>错题本</button><button onClick={loadMyPapers}>我的试卷</button><button onClick={loadMetrics}>数据中心</button><button onClick={openSettings}>模型设置</button></nav>
     </header>
     <main>
       {error && <div className="error-banner no-print" role="alert">{error}<button onClick={() => setError('')}>知道了</button></div>}
@@ -613,6 +614,7 @@ export default function App() {
           <button className="primary" disabled={busy || !selectedWrong.length || variantTotal > 30} onClick={composeVariants}>生成仿真练习卷 →</button>
         </div>}
       </section>}
+      {view === 'agent' && <AgentPanel aiConfigured={Boolean(aiSettings?.configured)} onOpenSettings={openSettings} onOpenPaper={data => { setPaperOrigin('papers'); setPaper(data); setResult(data.result || null); setAnswers(data.result ? Object.fromEntries(data.result.attempts.map(attempt => [attempt.question_id, attempt.answer_raw || ''])) : {}); setView('paper'); }} onQueueJob={job => { if (startedJobs.current.has(job.id)) return; setJobs(list => [...list, job]); setJobsOpen(true); }} />}
       {view === 'papers' && <section className="simple-page">
         <span className="eyebrow">你的组卷与作答记录</span><h1>我的试卷</h1>
         <p>点击试卷继续作答；需要留档时点「保存为 PDF」。未交卷保存空白卷，已交卷可选择带解析或空白卷。</p>

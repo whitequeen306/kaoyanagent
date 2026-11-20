@@ -5,7 +5,7 @@ export function createLocalRuntime(options = {}) {
     questions: [...localQuestions.filter(q => q.source === 'ai'), ...realQuestions].map(q => ({ ...q })),
     knowledge: realKnowledge.map(n => ({ ...n })),
     papers: [], attempts: [], wrongBook: [], reports: [], jobs: [], llmCalls: [],
-    idempotency: new Map(), deviceSessions: new Map(), aiSettings: new Map(), composeStats: { success: 0, failure: 0 },
+    idempotency: new Map(), deviceSessions: new Map(), aiSettings: new Map(), agentStates: new Map(), composeStats: { success: 0, failure: 0 },
     usage: new Map(), generatedToday: 0,
     dataset: 'local-fixtures',
     llm: options.llm || null,
