@@ -17,14 +17,17 @@ const messages: Record<string, string> = {
   llm_not_configured: '无法连接模型，请确认已配置模型',
   llm_unreachable: '无法连接模型，请确认已配置模型',
   llm_upstream_error: '无法连接模型，请确认已配置模型',
+  ai_invalid_json: '模型返回的判断格式异常，请重试。',
   llm_empty_response: '模型没有返回内容，请确认模型名称正确。',
   model_unavailable: '模型服务暂不可用，请稍后重试。',
   internal_error: '服务内部错误，请稍后重试。',
 };
+const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+const apiEndpoint = (path: string) => `${apiBaseUrl}/functions/v1/app${path}`;
 let sessionPromise: Promise<string> | null = null;
 async function sessionToken(): Promise<string> {
   if (!sessionPromise) {
-    sessionPromise = fetch('/functions/v1/app/api/session', {
+    sessionPromise = fetch(apiEndpoint('/api/session'), {
       method: 'POST', headers: { 'content-type': 'application/json', 'x-device-id': deviceId() },
       body: JSON.stringify({ device_id: deviceId() }),
     }).then(async response => {
@@ -38,7 +41,7 @@ async function sessionToken(): Promise<string> {
 export async function request<T>(path: string, options: { method?: string; body?: unknown } = {}): Promise<T> {
   const method = options.method || 'GET';
   const token = method === 'GET' ? null : await sessionToken();
-  const response = await fetch(`/functions/v1/app${path}`, {
+  const response = await fetch(apiEndpoint(path), {
     method,
     headers: {
       'x-device-id': deviceId(),
@@ -48,7 +51,13 @@ export async function request<T>(path: string, options: { method?: string; body?
     body: method !== 'GET' ? JSON.stringify({ ...(options.body as object || {}), device_id: deviceId() }) : undefined,
   });
   const data = await response.json();
-  if (!response.ok) throw new Error(messages[data?.error?.code] || '服务暂时不可用');
+  if (!response.ok) {
+    const code = data?.error?.code;
+    if (path === '/api/daily-question/submit' && code === 'llm_not_configured') {
+      throw new Error('这次作答需要模型判定。请打开模型设置，保存配置后重新提交。');
+    }
+    throw new Error(messages[code] || '服务暂时不可用');
+  }
   return data as T;
 }
 export const formatScore = (x2: number) => Number.isInteger(x2 / 2) ? String(x2 / 2) : (x2 / 2).toFixed(1);

@@ -11,6 +11,7 @@
     "state_conflict": 409,
     "idempotency_conflict": 409,
     "payload_too_large": 413,
+    "ai_invalid_json": 502,
     "quota_exceeded": 429,
     "model_unavailable": 503,
     "storage_unavailable": 503,
@@ -56,16 +57,37 @@
       "name": "get_daily_question",
       "method": "GET",
       "path": "/api/daily-question",
-      "responseProperties": ["date", "status", "reason", "question", "result", "ai_messages"]
+      "responseProperties": ["date", "status", "reason", "question", "result", "ai_messages"],
+      "result": {
+        "nullable": true,
+        "correct": "boolean|null (null when awaiting a legible answer)",
+        "retryable": "boolean",
+        "answer_kind": "text|image",
+        "answer_raw": "string|null",
+        "in_wrong_book": "boolean",
+        "feedback": "string",
+        "grading_status": "string",
+        "review": "null before final judgment; otherwise {correct_answer, explanation, solution_steps}"
+      }
     },
     {
       "name": "submit_daily_question",
       "method": "POST",
       "path": "/api/daily-question/submit",
-      "requestRequired": ["question_id", "answer_raw"],
+      "description": "Submit a nonblank answer_raw or an answer_image. Choices and literal fill-in matches are checked directly. Other mathematical text and images use the device's configured model. Returns the daily question view. A final wrong answer enters the device's review schedule once.",
+      "requestRequired": ["date", "question_id"],
       "requestProperties": {
+        "date": {"type": "string", "format": "date", "description": "Shanghai date shown on the daily question; stale pages receive 409."},
         "question_id": {"type": "string", "format": "uuid"},
         "answer_raw": {"type": "string", "maxLength": 20000},
+        "answer_image": {
+          "type": "object",
+          "required": ["mime_type", "data_url"],
+          "properties": {
+            "mime_type": {"type": "string", "enum": ["image/png", "image/jpeg", "image/webp"]},
+            "data_url": {"type": "string", "maxLength": 6000000}
+          }
+        },
         "confirmed_latex": {"type": ["string", "null"]},
         "duration_sec": {"type": ["integer", "null"], "minimum": 0}
       },
@@ -75,7 +97,8 @@
       "name": "explain_daily_question",
       "method": "POST",
       "path": "/api/daily-question/explain",
-      "requestProperties": {"prompt": {"type": "string", "maxLength": 1000}},
+      "requestRequired": ["date"],
+      "requestProperties": {"date": {"type": "string", "format": "date"}, "prompt": {"type": "string", "maxLength": 1000}},
       "responseProperties": ["date", "status", "reason", "question", "result", "ai_messages"]
     },
     {
@@ -214,6 +237,13 @@
         }
       },
       "responseProperties": ["job_id", "status", "stage", "progress", "detail", "expected_count", "reused_count"]
+    },
+    {
+      "name": "list_wrong_book",
+      "method": "GET",
+      "path": "/api/wrong-book",
+      "responseProperties": ["items"],
+      "daily_answer": "null for a paper attempt; for a daily answer: {date, correct, answer_kind, answer_raw, feedback}"
     },
     {
       "name": "delete_wrong_book_entry",

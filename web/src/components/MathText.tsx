@@ -29,17 +29,49 @@ function renderPlain(part: string, key: number) {
   return <span key={key}>{nodes}</span>;
 }
 
+const closingFence: Record<string, string> = {
+  '$': '$', '$$': '$$', '\\(': '\\)', '\\[': '\\]',
+  '$\\(': '\\)$', // Some exported options wrap one inline formula twice.
+};
+
 export function MathText({ text }: { text: string }) {
-  const normalized = String(text || '')
-    .replace(/\\\(/g, '$').replace(/\\\)/g, '$')
-    .replace(/\\\[/g, '$$').replace(/\\\]/g, '$$');
-  const parts = normalized.split(/(\$\$[\s\S]*?\$\$|\$[^$]+\$)/g);
-  return <span className="math-text">{parts.map((part, index) => {
-    const match = part.match(/^(\$\$?)([\s\S]*)\1$/);
-    if (!match) return renderPlain(part, index);
-    const display = match[1] === '$$';
+  const source = String(text || '');
+  const nodes: ReactNode[] = [];
+  const fences = /(\\[\\${}])|[{}]|\$\\\(|\$\$?|\\[()[\]]|\r?\n[ \t]*\r?\n/g;
+  let plainStart = 0;
+  let open: RegExpExecArray | null = null;
+  let braceDepth = 0;
+  let token: RegExpExecArray | null;
+  while ((token = fences.exec(source))) {
+    const [marker, escaped] = token;
+    if (escaped) continue;
+    if (marker === '{' || marker === '}') {
+      if (open) braceDepth = Math.max(0, braceDepth + (marker === '{' ? 1 : -1));
+      continue;
+    }
+    // A delimiter inside a TeX argument (e.g. \text{when $x$ ...}) belongs to KaTeX.
+    if (braceDepth && !marker.includes('\n')) continue;
+    const startsBlock = open?.[0] === '$' && marker === '$$' && /\s/.test(source[token.index - 1]);
+    if (!open || startsBlock || !source.startsWith(closingFence[open[0]], token.index)) {
+      // An incompatible fence or a blank line leaves the unfinished span in prose.
+      open = closingFence[marker] ? token : null;
+      braceDepth = 0;
+      continue;
+    }
+    const [left] = open;
+    const start = open.index;
+    const end = token.index + closingFence[left].length;
+    if (start > plainStart) nodes.push(renderPlain(source.slice(plainStart, start), plainStart));
+    const display = left === '$$' || left === '\\[';
+    const latex = source.slice(start + left.length, token.index);
     try {
-      return <span key={index} className={display ? 'math-display' : undefined} dangerouslySetInnerHTML={{ __html: katex.renderToString(match[2], { displayMode: display, throwOnError: false, strict: false }) }} />;
-    } catch { return <code key={index}>{part}</code>; }
-  })}</span>;
+      const html = katex.renderToString(latex, { displayMode: display, throwOnError: false, strict: false });
+      nodes.push(<span key={start} className={display ? 'math-display' : undefined} dangerouslySetInnerHTML={{ __html: html }} />);
+    } catch { nodes.push(<code key={start}>{source.slice(start, end)}</code>); }
+    fences.lastIndex = end;
+    plainStart = end;
+    open = null;
+  }
+  if (plainStart < source.length) nodes.push(renderPlain(source.slice(plainStart), plainStart));
+  return <span className="math-text">{nodes}</span>;
 }

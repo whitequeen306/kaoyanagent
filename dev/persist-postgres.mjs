@@ -61,8 +61,8 @@ export function createPersistence(runtime, connectionString) {
         .map(row => [row.device_id, parse(row.payload)]));
       runtime.agentStates = new Map((await pool.query('SELECT device_id, payload FROM agent_states')).rows
         .map(row => [row.device_id, parse(row.payload)]));
-      runtime.dailyQuestions = new Map((await pool.query('SELECT device_id, date, payload FROM daily_questions')).rows
-        .map(row => [`${row.device_id}:${String(row.date).slice(0, 10)}`, parse(row.payload)]));
+      const dailyRecords = (await pool.query('SELECT payload FROM daily_questions')).rows.map(row => parse(row.payload));
+      runtime.dailyQuestions = new Map(dailyRecords.map(record => [`${record.device_id}:${record.date}`, record]));
       const meta = new Map((await pool.query('SELECT key, value FROM meta')).rows.map(row => [row.key, row.value]));
       if (meta.get('version') !== String(VERSION)) return;
       if (meta.get('saved_date') === today()) {

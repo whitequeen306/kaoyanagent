@@ -1,4 +1,5 @@
 import { fail, uuid, nowIso, normalizeText } from './model.mjs';
+import { recordReviewOutcome } from './review.mjs';
 
 export function publicQuestion(question) {
   return {
@@ -75,31 +76,10 @@ export function gradeSubmission(paper, submission, runtime) {
     });
   }
   runtime.attempts.push(...attempts);
-  const intervals = [1, 2, 4, 7, 15, 30];
   for (const attempt of attempts) {
-    const wrong = attempt.score_x2 < attempt.max_score_x2 && attempt.grading_status === 'completed';
-    const key = `${submission.device_id}:${attempt.question_id}`;
-    const existing = runtime.wrongBook.find(w => `${w.device_id}:${w.question_id}` === key);
-    if (wrong) {
-      const mastery = existing ? Math.max(0, existing.mastery - 1) : 0;
-      const next = new Date(Date.now() + intervals[mastery] * 86400000).toISOString();
-      if (existing) {
-        existing.attempt_id = attempt.id;
-        existing.attempt_history_json = [...(existing.attempt_history_json || []), attempt.id];
-        existing.mastery = mastery; existing.next_review_at = next; existing.last_result = 'wrong';
-      } else {
-        runtime.wrongBook.push({
-          device_id: submission.device_id, question_id: attempt.question_id, attempt_id: attempt.id,
-          attempt_history_json: [attempt.id], first_wrong_at: nowIso(), mastery: 0,
-          next_review_at: next, review_count: 0, last_result: 'wrong',
-        });
-      }
-    } else if (existing && attempt.grading_status === 'completed') {
-      existing.mastery = Math.min(5, existing.mastery + 1);
-      existing.next_review_at = new Date(Date.now() + intervals[existing.mastery] * 86400000).toISOString();
-      existing.last_result = 'correct'; existing.review_count += 1;
-      existing.attempt_id = attempt.id;
-      existing.attempt_history_json = [...(existing.attempt_history_json || []), attempt.id];
+    if (attempt.grading_status === 'completed') {
+      recordReviewOutcome(runtime, submission.device_id, attempt.question_id,
+        attempt.score_x2 >= attempt.max_score_x2, { attemptId: attempt.id });
     }
   }
   paper.status = 'submitted'; paper.submitted_at = nowIso();

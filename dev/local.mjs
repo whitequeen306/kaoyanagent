@@ -4,9 +4,13 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 try {
-  for (const line of fs.readFileSync(resolve(root, '.env.local'), 'utf8').split('\n')) {
+  for (const rawLine of fs.readFileSync(resolve(root, '.env.local'), 'utf8').split(/\r?\n/)) {
+    const line = rawLine.trim();
     const match = line.match(/^([A-Z0-9_]+)=(.*)$/);
-    if (match) process.env[match[1]] = process.env[match[1]] || match[2];
+    if (match) {
+      const value = match[2].trim().replace(/^(['"])(.*)\1$/, '$2');
+      process.env[match[1]] = process.env[match[1]] || value;
+    }
   }
 } catch {}
 import { application, errorResponse } from '../functions/routes.mjs';
@@ -19,22 +23,50 @@ const persistence = createPersistence(runtime, process.env.LOCAL_DATABASE_URL ||
 await persistence.load();
 console.log(`Local storage: ${process.env.LOCAL_DATABASE_URL ? 'PostgreSQL' : 'SQLite'}`);
 const handle = application(runtime);
+const host = process.env.HOST || '127.0.0.1';
+const port = Number(process.env.PORT || 8000);
+const allowedOrigin = process.env.ALLOWED_ORIGIN || 'http://127.0.0.1:5173';
+const MAX_REQUEST_BYTES = 8 * 1024 * 1024;
+const corsHeaders = (requestOrigin) => {
+  const headers = {
+    'access-control-allow-headers': 'content-type, idempotency-key, x-device-id, x-device-token',
+    'access-control-allow-methods': 'GET, POST, PATCH, DELETE, OPTIONS',
+    'access-control-max-age': '86400',
+    vary: 'Origin',
+  };
+  if (allowedOrigin === '*' || requestOrigin === allowedOrigin) headers['access-control-allow-origin'] = allowedOrigin === '*' ? '*' : requestOrigin;
+  return headers;
+};
 const server = http.createServer(async (req, res) => {
   let response;
   try {
-    const url = `http://127.0.0.1:8000${req.url}`;
-    const bytes = [];
-    for await (const chunk of req) bytes.push(chunk);
-    response = await handle(new Request(url, { method: req.method, headers: req.headers, body: ['GET', 'HEAD'].includes(req.method) ? undefined : Buffer.concat(bytes) }));
+    if (req.method === 'OPTIONS') {
+      response = new Response(null, { status: 204 });
+    } else {
+      const url = `http://${req.headers.host || `${host}:${port}`}${req.url}`;
+      const bytes = [];
+      let requestBytes = 0;
+      let tooLarge = false;
+      for await (const chunk of req) {
+        requestBytes += chunk.length;
+        if (requestBytes <= MAX_REQUEST_BYTES) bytes.push(chunk);
+        else tooLarge = true;
+      }
+      response = tooLarge
+        ? Response.json({ ok: false, error: { code: 'payload_too_large' } }, { status: 413 })
+        : await handle(new Request(url, { method: req.method, headers: req.headers, body: ['GET', 'HEAD'].includes(req.method) ? undefined : Buffer.concat(bytes) }));
+    }
   } catch (error) {
     response = errorResponse(error);
   } finally {
-    if (req.method !== 'GET' || runtime.dailyQuestionsDirty) {
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) || runtime.dailyQuestionsDirty) {
       await persistence.save();
       runtime.dailyQuestionsDirty = false;
     }
   }
-  res.writeHead(response.status, Object.fromEntries(response.headers));
+  const headers = new Headers(response.headers);
+  for (const [name, value] of Object.entries(corsHeaders(req.headers.origin))) headers.set(name, value);
+  res.writeHead(response.status, Object.fromEntries(headers.entries()));
   res.end(Buffer.from(await response.arrayBuffer()));
 });
-server.listen(8000, '127.0.0.1', () => console.log('Local backend: http://127.0.0.1:8000/functions/v1/app/api/health'));
+server.listen(port, host, () => console.log(`Local backend: http://${host}:${port}/functions/v1/app/api/health`));

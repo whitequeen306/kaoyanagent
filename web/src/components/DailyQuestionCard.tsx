@@ -1,73 +1,101 @@
 import { MathText } from './MathText';
-import { difficultyLabel, formatScore } from '../lib/api';
-import type { DailyQuestionState, Qtype } from '../types';
+import { difficultyLabel } from '../lib/api';
+import type { DailyAnswerImage, DailyQuestionState, Qtype } from '../types';
 
 type DailyQuestionCardProps = {
   daily: DailyQuestionState;
   answer: string;
+  answerImage: DailyAnswerImage | null;
   busy: boolean;
+  reading: boolean;
+  error: string;
+  modelConfigured: boolean;
+  onSettings: () => void;
+  onWrong: () => void;
   aiBusy: boolean;
   aiPrompt: string;
   onAnswerChange: (value: string) => void;
+  onImageSelect: (file: File) => void;
+  onImageRemove: () => void;
   onSubmit: () => void;
   onAiPromptChange: (value: string) => void;
   onAiAsk: (prompt: string) => void;
 };
 
-const qtypeLabel = (qtype: Qtype) => ({
-  single_choice: '选择题', fill_blank: '填空题', free_response: '解答题',
-}[qtype]);
+const instructions: Record<Qtype, string> = {
+  single_choice: '单选题 · 选择一个选项，提交后按选项核对。',
+  fill_blank: '填空题 · 填写结果。答案明确匹配时直接判定，其他写法由模型判断是否等价。',
+  free_response: '解答题 · 写出步骤和结论，或上传手写过程，由模型判定。',
+};
 
 export function DailyQuestionCard({
-  daily, answer, busy, aiBusy, aiPrompt, onAnswerChange, onSubmit,
-  onAiPromptChange, onAiAsk,
+  daily, answer, answerImage, busy, reading, error, modelConfigured, onSettings, onWrong,
+  aiBusy, aiPrompt, onAnswerChange, onImageSelect, onImageRemove, onSubmit, onAiPromptChange, onAiAsk,
 }: DailyQuestionCardProps) {
-  const question = daily.question;
-  const submitted = daily.status === 'submitted';
-  const attempt = daily.result?.attempts[0];
-  const hasDetails = Boolean(attempt?.explanation) || Boolean(attempt?.solution_steps?.length);
-  return <section className={`daily-card ${submitted ? 'submitted' : ''}`}>
-    <div className="daily-card-head">
-      <div>
-        <span className="eyebrow">每日一题 · {daily.date}</span>
-        <h2>今天练一道，保持手感</h2>
-        <p>{daily.reason.text}</p>
-      </div>
-      <span className={`source-tag ${question.source}`}>{submitted ? '已完成' : '今日挑战'}</span>
-    </div>
-    <article className={`daily-question ${attempt ? (attempt.score_x2 === attempt.max_score_x2 ? 'correct' : 'incorrect') : ''}`}>
+  const { question, result } = daily;
+  const retryable = result?.correct === null && result.retryable;
+  const submitted = daily.status === 'submitted' && !retryable;
+  const review = submitted ? result?.review : null;
+  const judgmentClass = retryable ? 'retryable' : result?.correct === true ? 'correct' : result?.correct === false ? 'incorrect' : '';
+  const chosenLabel = submitted ? result?.answer_raw : answer;
+  const modelNeeded = Boolean(answerImage) || question.qtype === 'free_response';
+  return <section className="daily-card">
+    <header className="daily-card-head"><h2>每日一题</h2><time dateTime={daily.date}>{daily.date}</time></header>
+    <article className={`daily-question ${judgmentClass}`}>
       <div className="question-meta">
-        <span className="question-number">01</span>
         <span className={`source-tag ${question.source}`}>{question.source === 'real' ? `${question.year || '历年'} 真题` : 'AI 原创'}</span>
-        <span>{qtypeLabel(question.qtype)}</span>
         <span>难度：{difficultyLabel(question.difficulty)}</span>
-        <span>{formatScore(question.score_x2)} 分</span>
       </div>
       <div className="stem"><MathText text={question.stem_latex} /></div>
       {question.sub_items_json?.map(sub => <div className="sub-item" key={sub.label}><strong>{sub.label}</strong><MathText text={sub.prompt_latex} /></div>)}
+      {!submitted && <p>{instructions[question.qtype]}</p>}
       {question.qtype === 'single_choice' && <div className="answer-options">{question.options_json?.map(option => {
-        const correct = attempt?.correct_answer?.trim().toUpperCase() === option.label;
-        const chosen = answer === option.label;
-        return <button key={option.label} disabled={submitted} className={`${chosen ? 'chosen' : ''} ${attempt ? (correct ? 'correct-option' : chosen ? 'wrong-option' : '') : ''}`} onClick={() => onAnswerChange(option.label)}>
-          <b>{option.label}</b><MathText text={option.latex} />{correct && <span className="mark correct">✓</span>}{attempt && chosen && !correct && <span className="mark wrong">✗</span>}
+        const chosen = chosenLabel === option.label;
+        return <button key={option.label} disabled={submitted || busy} aria-pressed={chosen} className={chosen ? 'chosen' : ''} onClick={() => onAnswerChange(option.label)}>
+          <b>{option.label}</b><MathText text={option.latex} />
         </button>;
       })}</div>}
-      {question.qtype === 'fill_blank' && <input className="blank-answer" disabled={submitted} value={answer} onChange={event => onAnswerChange(event.target.value)} placeholder="填写答案，如 1 或 e^x" />}
-      {question.qtype === 'free_response' && <textarea className="daily-answer-textarea" disabled={submitted} value={answer} onChange={event => onAnswerChange(event.target.value)} placeholder="写下你的解题过程" rows={4} />}
-      {!submitted && <div className="daily-submit-row"><span>先独立作答，再查看解析。</span><button className="primary" disabled={busy} onClick={onSubmit}>{busy ? '正在判卷…' : '提交答案 →'}</button></div>}
-      {attempt && <div className="answer-review">
-        <div className="correct-answer"><strong>正确答案</strong>{attempt.correct_answer ? <MathText text={attempt.correct_answer} /> : <span>—</span>}</div>
-        {hasDetails && <div className="answer-detail">
-          {attempt.explanation && <p><strong>考点解析</strong><MathText text={attempt.explanation} /></p>}
-          {attempt.solution_steps && attempt.solution_steps.length > 0 && <ol>{attempt.solution_steps.map((step, index) => <li key={index}><MathText text={step} /></li>)}</ol>}
+      {!submitted && <>
+        {question.qtype === 'fill_blank' && <input aria-label="填空答案" className="blank-answer" disabled={busy} value={answer} onChange={event => onAnswerChange(event.target.value)} placeholder="填写结果" />}
+        {question.qtype === 'free_response' && <textarea aria-label="解题过程" className="daily-answer-textarea" disabled={busy} value={answer} onChange={event => onAnswerChange(event.target.value)} placeholder="填写步骤和结论" rows={4} />}
+        <div className="daily-answer-tools">
+          <label className="daily-upload">
+            <span>{reading ? '正在读取图片…' : answerImage ? '替换作答图片' : '上传作答图片'}</span>
+            <small>PNG / JPG / WebP，限 4 MB。提交时图片会发送给本设备配置的视觉模型。</small>
+            <input type="file" disabled={busy} accept="image/png,image/jpeg,image/webp" onChange={event => {
+              const file = event.target.files?.[0];
+              if (file) onImageSelect(file);
+              event.currentTarget.value = '';
+            }} />
+          </label>
+          {answerImage && <div className="daily-image-preview">
+            <img src={answerImage.data_url} alt="待提交的作答图片" />
+            <div><strong>{answerImage.name}</strong><button disabled={busy} onClick={onImageRemove}>移除图片</button></div>
+          </div>}
+        </div>
+        {error && <p role="alert">{error}</p>}
+        {(error || (!modelConfigured && modelNeeded) || retryable) && <div className="daily-settings">
+          {!modelConfigured && modelNeeded && <span>请先配置判定所需的模型。</span>}
+          <button onClick={onSettings} disabled={busy}>模型设置</button>
         </div>}
-        <div className="score-line">本题得分 {formatScore(attempt.score_x2)} / {formatScore(attempt.max_score_x2)} · {daily.result?.score_rate_bp ? `${daily.result.score_rate_bp / 100}%` : '0%'}</div>
+        <div className="daily-submit-row"><span>只判对错，不计分。</span><button className="primary" disabled={busy || reading || (!answer.trim() && !answerImage)} onClick={onSubmit}>{busy ? '正在判定…' : '提交作答'}</button></div>
+      </>}
+      {(submitted || retryable) && result && <div className={`daily-judgment ${judgmentClass}`} role="status">
+        <strong>{retryable ? '尚未判定' : result.correct ? '回答正确' : '回答错误'}</strong>
+        {submitted && <div>你的作答：{result.answer_kind === 'image' && '图片已判定'}{result.answer_raw && <MathText text={result.answer_raw} />}{result.answer_kind === 'text' && !result.answer_raw && '无原文记录'}</div>}
+        {result.feedback && <MathText text={result.feedback} />}
+        {retryable && <div>请调整文字作答或换一张清晰的图片后重新提交。</div>}
       </div>}
+      {review && <details className="daily-review"><summary>查看题库参考解答</summary>
+        {review.correct_answer && <p><strong>参考答案</strong><MathText text={review.correct_answer} /></p>}
+        {review.explanation && <p><MathText text={review.explanation} /></p>}
+        {review.solution_steps.length > 0 && <ol>{review.solution_steps.map((step, index) => <li key={index}><MathText text={step} /></li>)}</ol>}
+      </details>}
+      {submitted && result?.correct === false && result.in_wrong_book && <button className="daily-wrong-link" onClick={onWrong}>查看错题本</button>}
     </article>
     {submitted && <div className="daily-ai-panel">
-      <div><strong>想把这道题真正吃透？</strong><span>AI 会结合你的本次作答给出讲解和下一步提醒。</span></div>
       <div className="daily-ai-messages">{daily.ai_messages.map((message, index) => <div className={`daily-ai-message ${message.role}`} key={`${message.role}-${index}`}><span>{message.role === 'assistant' ? 'AI' : '你'}</span><MathText text={message.content} /></div>)}</div>
-      <div className="daily-ai-actions"><button className="primary" disabled={aiBusy} onClick={() => onAiAsk('')}>{aiBusy ? '正在思考…' : 'AI 讲解这道题'}</button><div className="daily-ai-followup"><input value={aiPrompt} onChange={event => onAiPromptChange(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) onAiAsk(aiPrompt); }} placeholder="继续追问，例如：我为什么会错？" /><button disabled={aiBusy || !aiPrompt.trim()} onClick={() => onAiAsk(aiPrompt)}>追问</button></div></div>
+      <div className="daily-ai-actions"><button className="primary" disabled={aiBusy} onClick={() => onAiAsk('')}>{aiBusy ? '正在思考…' : 'AI 讲解这道题'}</button><div className="daily-ai-followup"><input aria-label="追问内容" value={aiPrompt} onChange={event => onAiPromptChange(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing && !aiBusy && aiPrompt.trim()) onAiAsk(aiPrompt); }} placeholder="写下你不理解的步骤" /><button disabled={aiBusy || !aiPrompt.trim()} onClick={() => onAiAsk(aiPrompt)}>追问</button></div></div>
     </div>}
   </section>;
 }
