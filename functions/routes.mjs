@@ -8,7 +8,7 @@ import { advancePaperJob, advanceVariantJob, createPaperJob, createVariantJob, d
 import { publicAiSettings, saveAiSettings, settingsFor } from './ai-settings.mjs';
 import { getAgentState, saveProfile, savePreferences, saveAgentSummary, clearAgentSummary, updateStudyPlan } from './agent-store.mjs';
 import { advanceAgentTask, confirmAgentTask, createAgentTask, publicAgentTask } from './agent.mjs';
-import { getDailyQuestion, ensureDailyPaper, generateDailyAiReply } from './daily-question.mjs';
+import { dailyJudgment, getDailyQuestion, generateDailyAiReply, submitDailyAnswer } from './daily-question.mjs';
 
 function json(value, status = 200) { return Response.json(value, { status }); }
 function paperView(paper) { const { device_id, ...rest } = paper; return rest; }
@@ -30,6 +30,10 @@ async function body(request) {
   try { value = await request.json(); } catch { fail('invalid_input'); }
   if (!value || typeof value !== 'object' || Array.isArray(value)) fail('invalid_input');
   return value;
+}
+async function fingerprint(value) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(value)));
+  return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
 }
 function idempotent(runtime, request, deviceId, action, input, work) {
   const key = request.headers.get('idempotency-key');
@@ -69,6 +73,14 @@ async function asyncIdempotent(runtime, request, deviceId, action, input, work) 
     if (inflight.get(scoped)?.promise === promise) inflight.delete(scoped);
   }
 }
+async function serial(runtime, queueKey, work) {
+  const queues = runtime.dailySubmitQueues ||= new Map();
+  const previous = queues.get(queueKey) || Promise.resolve();
+  const current = previous.catch(() => {}).then(work);
+  queues.set(queueKey, current);
+  try { return await current; }
+  finally { if (queues.get(queueKey) === current) queues.delete(queueKey); }
+}
 function requireSession(runtime, request, deviceId) {
   const token = request.headers.get('x-device-token');
   const session = runtime.deviceSessions.get(deviceId);
@@ -93,14 +105,31 @@ function paperResult(paper, runtime) {
     ...submissionSummary(paper, attempts), diagnosis: null,
   };
 }
-function dailyQuestionView(runtime, deviceId) {
-  const daily = getDailyQuestion(runtime, deviceId);
+function publicDailyQuestion(question) {
+  const view = publicQuestion(question);
+  const { score_x2, score_source, ...rest } = view;
+  return {
+    ...rest,
+    sub_items_json: view.sub_items_json?.map(({ score_x2: _score, ...item }) => item) || null,
+  };
+}
+function dailyQuestionView(runtime, deviceId, daily = getDailyQuestion(runtime, deviceId)) {
+  const judgment = dailyJudgment(runtime, daily);
   return {
     date: daily.record.date,
-    status: daily.paper?.status === 'submitted' ? 'submitted' : 'available',
+    status: judgment && !judgment.retryable ? 'submitted' : 'available',
     reason: daily.record.reason,
-    question: publicQuestion(daily.question),
-    result: daily.paper?.status === 'submitted' ? paperResult(daily.paper, runtime) : null,
+    question: publicDailyQuestion(daily.question),
+    result: judgment ? {
+      correct: judgment.correct,
+      feedback: judgment.feedback || '',
+      retryable: judgment.retryable === true,
+      answer_kind: judgment.answer_kind || 'text',
+      grading_status: judgment.grading_status || 'completed',
+      answer_raw: judgment.answer_raw || null,
+      in_wrong_book: !judgment.retryable && runtime.wrongBook.some(item => item.device_id === deviceId && item.question_id === daily.question.id),
+      review: !judgment.retryable && typeof judgment.correct === 'boolean' ? reviewQuestion(daily.question) : null,
+    } : null,
     ai_messages: daily.record.ai_messages || [],
   };
 }
@@ -133,33 +162,41 @@ export function application(runtime) {
       return json(dailyQuestionView(runtime, deviceId));
     }
     if (path === '/api/daily-question/submit' && request.method === 'POST') {
-      if (typeof input.question_id !== 'string' || typeof input.answer_raw !== 'string') fail('invalid_input');
+      if (typeof input.question_id !== 'string') fail('invalid_input');
+      if (input.answer_raw !== undefined && typeof input.answer_raw !== 'string') fail('invalid_input');
       if (input.confirmed_latex !== undefined && input.confirmed_latex !== null && typeof input.confirmed_latex !== 'string') fail('invalid_input');
       if (input.duration_sec !== undefined && input.duration_sec !== null
         && (!Number.isInteger(input.duration_sec) || input.duration_sec < 0)) fail('invalid_input');
-      if (input.answer_raw.length > 20000) fail('payload_too_large', 413);
+      if (input.answer_raw?.length > 20000) fail('payload_too_large', 413);
+      const answerRaw = (input.answer_raw || '').trim();
+      if (!answerRaw && input.answer_image == null) fail('invalid_input');
       const daily = getDailyQuestion(runtime, deviceId);
-      if (input.question_id !== daily.question.id) fail('state_conflict', 409);
-      const response = idempotent(runtime, request, deviceId, `daily-submit:${daily.record.date}`, input, () => {
-        const current = getDailyQuestion(runtime, deviceId);
-        const paper = ensureDailyPaper(runtime, current);
-        if (paper.status !== 'submitted') {
-          gradeSubmission(paper, {
-            device_id: deviceId,
-            answers: [{ question_id: input.question_id, answer_raw: input.answer_raw, confirmed_latex: input.confirmed_latex ?? null, duration_sec: input.duration_sec ?? null }],
-          }, runtime);
-        }
-        return dailyQuestionView(runtime, deviceId);
-      });
+      if (input.question_id !== daily.question.id || (input.date !== daily.record.date)) fail('state_conflict', 409);
+      const responseInput = {
+        question_id: input.question_id,
+        answer_raw: answerRaw,
+        confirmed_latex: input.confirmed_latex ?? null,
+        duration_sec: input.duration_sec ?? null,
+        answer_image: input.answer_image ? {
+          mime_type: input.answer_image.mime_type,
+          data_url_fingerprint: await fingerprint(input.answer_image.data_url),
+        } : null,
+      };
+      const response = await asyncIdempotent(runtime, request, deviceId, `daily-submit:${daily.record.date}`, responseInput,
+        () => serial(runtime, `${deviceId}:${daily.record.date}`, async () => {
+          await submitDailyAnswer(runtime, daily, answerRaw, input.answer_image);
+          return dailyQuestionView(runtime, deviceId, daily);
+        }));
       return json(response);
     }
     if (path === '/api/daily-question/explain' && request.method === 'POST') {
       if (input.prompt !== undefined && typeof input.prompt !== 'string') fail('invalid_input');
       if (String(input.prompt || '').length > 1000) fail('payload_too_large', 413);
       const daily = getDailyQuestion(runtime, deviceId);
+      if (input.date !== daily.record.date) fail('state_conflict', 409);
       const response = await asyncIdempotent(runtime, request, deviceId, `daily-explain:${daily.record.date}`, input, async () => {
-        await generateDailyAiReply(runtime, deviceId, input.prompt || '');
-        return dailyQuestionView(runtime, deviceId);
+        await generateDailyAiReply(runtime, deviceId, daily, input.prompt || '');
+        return dailyQuestionView(runtime, deviceId, daily);
       });
       return json(response);
     }
@@ -311,7 +348,7 @@ export function application(runtime) {
     if (path === '/api/wrong-book' && request.method === 'GET') {
       return json({ items: listWrongBook(deviceId, runtime).map(item => ({
         ...item,
-        question: item.question ? publicQuestion(item.question) : null,
+        question: item.question ? (item.daily_answer ? publicDailyQuestion(item.question) : publicQuestion(item.question)) : null,
         attempt: item.attempt ? publicAttempt(item.attempt) : null,
         review: item.question ? reviewQuestion(item.question) : null,
         variant_stats: item.question ? variantMastery(item, deviceId, runtime) : null,
@@ -329,7 +366,7 @@ export function application(runtime) {
     if (path === '/api/review/today' && request.method === 'GET') {
       const items = todayReview(deviceId, runtime).map(item => ({
         ...item,
-        question: item.question ? publicQuestion(item.question) : null,
+        question: item.question ? (item.daily_answer ? publicDailyQuestion(item.question) : publicQuestion(item.question)) : null,
         attempt: item.attempt ? publicAttempt(item.attempt) : null,
         review: item.question ? reviewQuestion(item.question) : null,
       }));

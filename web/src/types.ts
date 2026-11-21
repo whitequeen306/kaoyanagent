@@ -26,10 +26,31 @@ export interface GradeResult {
   by_source: Record<string, { score_x2: number; max_score_x2: number }>;
 }
 export interface DailyAiMessage { role: 'user' | 'assistant'; content: string; }
+export interface DailyAnswerImage { mime_type: 'image/png' | 'image/jpeg' | 'image/webp'; data_url: string; name: string; }
+export interface DailyWrongAnswer {
+  date: string;
+  correct: boolean;
+  answer_kind: 'image' | 'text';
+  answer_raw: string | null;
+  feedback: string;
+}
+export interface DailyJudgment {
+  in_wrong_book: boolean;
+  answer_raw: string | null;
+  review: { correct_answer: string; explanation: string; solution_steps: string[] } | null;
+  correct: boolean | null;
+  feedback: string;
+  retryable?: boolean;
+  answer_kind: 'text' | 'image';
+  grading_status: string;
+}
+export type DailyPublicQuestion = Omit<PublicQuestion, 'score_x2' | 'score_source'> & {
+  sub_items_json?: { label: string; prompt_latex: string }[] | null;
+};
 export interface DailyQuestionState {
   date: string; status: 'available' | 'submitted';
   reason: { code: string; text: string };
-  question: PublicQuestion;
-  result: (GradeResult & { diagnosis?: unknown }) | null;
+  question: DailyPublicQuestion;
+  result: DailyJudgment | null;
   ai_messages: DailyAiMessage[];
 }

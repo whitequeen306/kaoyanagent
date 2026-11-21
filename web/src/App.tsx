@@ -5,7 +5,7 @@ import { AgentPanel } from './components/AgentPanel';
 import { DailyQuestionCard } from './components/DailyQuestionCard';
 import { pdfFileName, pickPdfDestination, savePdfElement } from './lib/pdf';
 import { deviceId, difficultyLabel, formatScore, request } from './lib/api';
-import type { DailyQuestionState, Difficulty, GradeResult, Knowledge, Paper, PaperMode, Qtype, SourceMode } from './types';
+import type { DailyAnswerImage, DailyQuestionState, DailyWrongAnswer, Difficulty, GradeResult, Knowledge, Paper, PaperMode, Qtype, SourceMode } from './types';
 
 const qtypeOptions: { value: Qtype; label: string }[] = [
   { value: 'single_choice', label: '选择题' }, { value: 'fill_blank', label: '填空题' }, { value: 'free_response', label: '解答题' },
@@ -85,6 +85,7 @@ export default function App() {
   const [pdfBusy, setPdfBusy] = useState(false);
   const [pdfMessage, setPdfMessage] = useState('');
   const [wrongItems, setWrongItems] = useState<any[]>([]);
+  const dailyWrongTarget = useRef<string | null>(null);
   const [selectedWrong, setSelectedWrong] = useState<string[]>([]);
   const [variantCounts, setVariantCounts] = useState<Record<string, number>>({});
   const [myPapers, setMyPapers] = useState<any[]>([]);
@@ -94,6 +95,10 @@ export default function App() {
   const [elapsed, setElapsed] = useState(0);
   const [dailyQuestion, setDailyQuestion] = useState<DailyQuestionState | null>(null);
   const [dailyAnswer, setDailyAnswer] = useState('');
+  const [dailyAnswerImage, setDailyAnswerImage] = useState<DailyAnswerImage | null>(null);
+  const [dailyError, setDailyError] = useState('');
+  const [dailyReading, setDailyReading] = useState(false);
+  const imageReadVersion = useRef(0);
   const [dailyBusy, setDailyBusy] = useState(false);
   const [dailyAiBusy, setDailyAiBusy] = useState(false);
   const [dailyAiPrompt, setDailyAiPrompt] = useState('');
@@ -112,7 +117,8 @@ export default function App() {
     request<any>('/api/ai-settings').then(setAiSettings).catch(() => {});
     request<DailyQuestionState>('/api/daily-question').then(data => {
       setDailyQuestion(data);
-      setDailyAnswer(data.result?.attempts[0]?.answer_raw || '');
+      setDailyAnswer(data.result?.answer_raw ?? '');
+      setDailyAnswerImage(null);
     }).catch(() => {});
     const savedId = localStorage.getItem('kaoyan-paper-id');
     if (savedId) {
@@ -298,22 +304,43 @@ export default function App() {
     } catch (e) { setError(e instanceof Error ? e.message : '判卷失败'); }
     finally { setBusy(false); }
   }
+  function selectDailyImage(file: File) {
+    if (dailyBusy) return;
+    const version = ++imageReadVersion.current;
+    setDailyAnswerImage(null);
+    setDailyReading(false);
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) { setDailyError('只支持 PNG、JPG 或 WebP 图片。'); return; }
+    if (!file.size || file.size > 4 * 1024 * 1024) { setDailyError('请选择非空且不超过 4 MB 的图片。'); return; }
+    setDailyError('');
+    setDailyReading(true);
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      if (version !== imageReadVersion.current) return;
+      setDailyReading(false);
+      if (reader.error || typeof reader.result !== 'string') { setDailyError('图片读取失败，请重新选择。'); return; }
+      setDailyAnswerImage({ mime_type: file.type as DailyAnswerImage['mime_type'], data_url: reader.result, name: file.name });
+    };
+    reader.readAsDataURL(file);
+  }
   async function submitDaily() {
-    if (!dailyQuestion) return;
-    setDailyBusy(true); setError('');
+    if (!dailyQuestion || dailyBusy || dailyReading || (!dailyAnswer.trim() && !dailyAnswerImage)) return;
+    setDailyBusy(true); setDailyError('');
     try {
       const data = await request<DailyQuestionState>('/api/daily-question/submit', { method: 'POST', body: {
-        question_id: dailyQuestion.question.id, answer_raw: dailyAnswer,
+        date: dailyQuestion.date, question_id: dailyQuestion.question.id,
+        answer_raw: dailyAnswer,
+        answer_image: dailyAnswerImage ? { mime_type: dailyAnswerImage.mime_type, data_url: dailyAnswerImage.data_url } : undefined,
       } });
       setDailyQuestion(data);
-    } catch (e) { setError(e instanceof Error ? e.message : '每日题判卷失败'); }
+      if (data.status === 'submitted' && !data.result?.retryable) setDailyAnswerImage(null);
+    } catch (e) { setDailyError(e instanceof Error ? e.message : '每日题判定失败，请重试。'); }
     finally { setDailyBusy(false); }
   }
   async function askDailyAi(prompt: string) {
     if (!dailyQuestion) return;
     setDailyAiBusy(true); setError('');
     try {
-      const data = await request<DailyQuestionState>('/api/daily-question/explain', { method: 'POST', body: { prompt } });
+      const data = await request<DailyQuestionState>('/api/daily-question/explain', { method: 'POST', body: { date: dailyQuestion.date, prompt } });
       setDailyQuestion(data);
       setDailyAiPrompt('');
     } catch (e) {
@@ -321,6 +348,14 @@ export default function App() {
       if (!aiSettings?.configured) openSettings();
     } finally { setDailyAiBusy(false); }
   }
+  useEffect(() => {
+    const target = dailyWrongTarget.current;
+    if (view !== 'wrong' || !target) return;
+    const card = document.getElementById(`wrong-${target}`);
+    card?.focus({ preventScroll: true });
+    card?.scrollIntoView({ block: 'start', behavior: 'instant' });
+    dailyWrongTarget.current = null;
+  }, [view]);
   async function loadWrong() {
     setBusy(true); setError('');
     try {
@@ -468,6 +503,7 @@ export default function App() {
   }
 
   return <div className="app-shell">
+    <a className="skip-link" href="#main-content">跳到主要内容</a>
     {recentPreview && <div className="modal-backdrop no-print" role="dialog" aria-modal="true" aria-label="组卷详情" onClick={() => setRecentPreview(null)}><div className="preview-card" onClick={event => event.stopPropagation()}>
       <div className="preview-head"><div><span className="eyebrow">公开组卷预览</span><h2>{recentPreview.concepts?.map((node: any) => node.name).slice(0, 3).join(' · ') || '综合练习'}</h2><p>{recentPreview.mode === 'exam' ? '整卷模考' : '专项突破'} · {sourceLabel(recentPreview.source_mode)} · {recentPreview.items.length} 题 · {formatScore(recentPreview.total_score_x2)} 分</p></div><button className="preview-close" onClick={() => setRecentPreview(null)}>关闭</button></div>
       <p className="preview-note">{recentPreview.note}</p>
@@ -506,26 +542,32 @@ export default function App() {
       <button className="brand" onClick={() => { setView('compose'); setResult(null); }}>
         <span className="brand-mark">∑</span><span><strong>研数</strong><small>考研数学二 · 智能练习</small></span>
       </button>
-      <nav><button onClick={() => setView('compose')}>组卷</button><button onClick={() => setView('agent')}>学习助手</button><button onClick={loadWrong}>错题本</button><button onClick={loadMyPapers}>我的试卷</button><button onClick={loadMetrics}>数据中心</button><button onClick={openSettings}>模型设置</button></nav>
+      <nav aria-label="主导航"><button className={view === 'compose' ? 'active' : ''} aria-current={view === 'compose' ? 'page' : undefined} onClick={() => setView('compose')}>组卷</button><button className={view === 'agent' ? 'active' : ''} aria-current={view === 'agent' ? 'page' : undefined} onClick={() => setView('agent')}>学习助手</button><button className={view === 'wrong' ? 'active' : ''} aria-current={view === 'wrong' ? 'page' : undefined} onClick={loadWrong}>错题本</button><button className={view === 'papers' ? 'active' : ''} aria-current={view === 'papers' ? 'page' : undefined} onClick={loadMyPapers}>我的试卷</button><button className={view === 'metrics' ? 'active' : ''} aria-current={view === 'metrics' ? 'page' : undefined} onClick={loadMetrics}>数据中心</button><button onClick={openSettings}>模型设置</button></nav>
     </header>
-    <main>
+    <main id="main-content" tabIndex={-1}>
       {error && <div className="error-banner no-print" role="alert">{error}<button onClick={() => setError('')}>知道了</button></div>}
       {view === 'compose' && <>
         {dailyQuestion && <DailyQuestionCard
           daily={dailyQuestion}
           answer={dailyAnswer}
+          answerImage={dailyAnswerImage}
           busy={dailyBusy}
+          reading={dailyReading}
+          error={dailyError}
+          modelConfigured={Boolean(aiSettings?.configured)}
+          onSettings={openSettings}
+          onWrong={() => { dailyWrongTarget.current = dailyQuestion.question.id; void loadWrong(); }}
           aiBusy={dailyAiBusy}
           aiPrompt={dailyAiPrompt}
           onAnswerChange={setDailyAnswer}
+          onImageSelect={selectDailyImage}
+          onImageRemove={() => setDailyAnswerImage(null)}
           onSubmit={submitDaily}
           onAiPromptChange={setDailyAiPrompt}
           onAiAsk={askDailyAi}
         />}
         <section className="intro no-print">
-          <span className="eyebrow">真题 · 仿真 · 精准复习</span>
-          <h1>今天，想把哪块知识练明白？</h1>
-          <p>选一个知识块，设定题量和难度。剩下的交给我们。</p>
+          <h1>按知识点组卷</h1>
         </section>
         <div className="compose-layout no-print">
           <section className="panel knowledge-panel">
@@ -544,7 +586,7 @@ export default function App() {
                 </div>}
               </div>)}</div>
             </div>)}</div>}
-            {!knowledge.length && <div className="empty-state">正在连接本地服务并加载知识点…</div>}
+            {!knowledge.length && <div className="empty-state">正在加载知识点…</div>}
           </section>
           <section className="panel settings-panel">
             <div className="section-heading"><span>02</span><div><h2>设定这张卷</h2><p>你可以随时调整。</p></div></div>
@@ -606,13 +648,15 @@ export default function App() {
         {!result && <div className="submit-bar no-print"><div><strong>做完了吗？</strong><span>未作答的题按 0 分计入，解答题需后续模型复核。</span></div><button className="primary" disabled={busy} onClick={submit}>{busy ? '正在判卷…' : '提交并判卷'}</button></div>}
         {result && <section className="grade-result no-print" id="grade-result"><span className="eyebrow">本次作答</span><h2>得分率 {result.score_rate_bp / 100}%</h2><p>得分 {formatScore(result.score_x2)} / {formatScore(result.max_score_x2)}。错题已自动加入错题本。</p><div className="source-score">{Object.entries(result.by_source).filter(([, v]) => v.max_score_x2 > 0).map(([key, value]) => <div key={key}><span>{key === 'real' ? '真题部分' : 'AI 原创部分'}</span><strong>{formatScore(value.score_x2)} / {formatScore(value.max_score_x2)}</strong></div>)}</div><div className="result-actions"><button onClick={loadWrong}>查看错题本</button><button className="primary" onClick={() => { setView('compose'); setResult(null); }}>再组一张卷</button></div></section>}
       </>}
-      {view === 'wrong' && <section className="simple-page"><span className="eyebrow">只复习真正需要的内容</span><h1>错题本</h1><p>每道错题都保留当时的作答、正确答案和详细解析。</p>{wrongItems.length === 0 ? <div className="empty-card"><h2>暂时没有错题</h2><p>完成一张试卷后，做错的题会自动出现在这里。</p><button className="primary" onClick={() => setView('compose')}>去组一张卷</button></div> : <div className="wrong-list">{wrongItems.map(item => {
+      {view === 'wrong' && <section className="simple-page"><h1>错题本</h1>{wrongItems.length === 0 ? <div className="empty-card"><h2>暂时没有错题</h2><p>每日一题或试卷里答错的题会出现在这里。</p><button className="primary" onClick={() => setView('compose')}>去组一张卷</button></div> : <div className="wrong-list">{wrongItems.map(item => {
         const question = item.question, review = item.review, attempt = item.attempt;
+        const daily: DailyWrongAnswer | null = item.daily_answer;
+        const answerRaw = daily ? daily.answer_raw : attempt?.answer_raw;
         const reviewOpen = Boolean(expandedReviews[item.question_id]);
         const hasDetails = Boolean(review?.explanation) || Boolean(review?.solution_steps?.length);
         const stats = item.variant_stats;
         const selectedForVariant = selectedWrong.includes(item.question_id);
-        return <article className="panel wrong-card" key={item.question_id}>
+        return <article className="panel wrong-card" id={`wrong-${item.question_id}`} tabIndex={-1} key={item.question_id}>
           <div className="wrong-select-row">
             <label className="wrong-select"><input type="checkbox" checked={selectedForVariant} onChange={() => toggleWrongSelection(item.question_id)} />选择本题做仿真练习</label>
             {selectedForVariant && <div className="variant-count-control">
@@ -625,17 +669,21 @@ export default function App() {
               <small>每题至少 3 道</small>
             </div>}
           </div>
-          <div className="question-meta"><span className="source-tag real">错题 · 掌握度 {item.mastery}/5</span><span className={`source-tag ${question?.source === 'ai' ? 'ai' : 'real'}`}>{question?.source === 'ai' ? 'AI 原创' : `${question?.year || '历年'} 真题 · 第 ${question?.seq_label} 题`}</span><span>{qtypeLabel(question?.qtype)}</span></div>
+          <div className="question-meta">{!daily && <span className="source-tag real">错题 · 掌握度 {item.mastery}/5</span>}<span className={`source-tag ${question?.source === 'ai' ? 'ai' : 'real'}`}>{question?.source === 'ai' ? 'AI 原创' : `${question?.year || '历年'} 真题 · 第 ${question?.seq_label} 题`}</span><span>{qtypeLabel(question?.qtype)}</span></div>
           <div className="stem"><MathText text={question?.stem_latex || ''} /></div>
           {question?.sub_items_json?.map((sub: any) => <div className="sub-item" key={sub.label}><strong>{sub.label}</strong><MathText text={sub.prompt_latex} /></div>)}
           {question?.qtype === 'single_choice' && question.options_json?.length ? <div className="answer-options">{question.options_json.map((option: any) => {
             const correct = review?.correct_answer?.trim().toUpperCase() === option.label;
-            const chosen = attempt?.answer_raw === option.label;
+            const chosen = answerRaw === option.label;
             return <button key={option.label} disabled className={`${chosen ? 'chosen' : ''} ${correct ? 'correct-option' : chosen ? 'wrong-option' : ''}`}>
               <b>{option.label}</b><MathText text={option.latex} />{correct && <span className="mark correct">✓</span>}{chosen && !correct && <span className="mark wrong">✗</span>}
             </button>;
           })}</div> : null}
-          {question?.qtype !== 'single_choice' && <div className="wrong-answer-line"><strong>你的作答</strong>{attempt?.answer_raw ? <MathText text={attempt.answer_raw} /> : <span>未作答</span>}</div>}
+          {daily ? <div className="daily-wrong-answer">
+            <strong>每日一题 · {daily.date} · {daily.correct ? '回答正确' : '回答错误'}</strong>
+            <div>你的作答：{daily.answer_kind === 'image' && '图片已判定'}{daily.answer_raw && <MathText text={daily.answer_raw} />}{daily.answer_kind === 'text' && !daily.answer_raw && '无原文记录'}</div>
+            {daily.feedback && <MathText text={daily.feedback} />}
+          </div> : question?.qtype !== 'single_choice' && <div className="wrong-answer-line"><strong>你的作答</strong>{attempt?.answer_raw ? <MathText text={attempt.answer_raw} /> : <span>未作答</span>}</div>}
           {review && <div className="answer-review">
             <button type="button" className="correct-answer" onClick={() => setExpandedReviews(current => ({ ...current, [item.question_id]: !current[item.question_id] }))} aria-expanded={reviewOpen}>
               <strong>正确答案</strong>{review.correct_answer ? <MathText text={review.correct_answer} /> : <span>—</span>}
@@ -729,6 +777,6 @@ export default function App() {
         <p className="job-dock-note">同时生成 2 张，其余自动排队；期间可继续组卷。</p>
       </div>}
     </aside>}
-    <footer className="no-print">研数 · 本地开发切片 <button onClick={() => setShowMathHelp(v => !v)}>公式输入说明</button>{showMathHelp && <span> 当前题目使用 KaTeX 渲染；线上不会导出需要自行编译的 LaTeX 源码。</span>}<span className="device-note">匿名设备：{deviceId().slice(0, 12)}…</span></footer>
+    <footer className="no-print">研数 · 考研数学二 <button aria-expanded={showMathHelp} onClick={() => setShowMathHelp(v => !v)}>公式输入说明</button>{showMathHelp && <span>可以输入 1/2、x^2，或用两个 $ 符号括住行内 LaTeX 公式。</span>}<span className="device-note">匿名设备：{deviceId().slice(0, 12)}…</span></footer>
   </div>;
 }

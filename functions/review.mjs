@@ -1,10 +1,40 @@
 import { nowIso } from './model.mjs';
+
+const reviewIntervals = [1, 2, 4, 7, 15, 30];
+
+export function recordReviewOutcome(runtime, deviceId, questionId, correct, { attemptId = null, dailyDate = null }) {
+  let entry = runtime.wrongBook.find(item => item.device_id === deviceId && item.question_id === questionId);
+  if (!entry) {
+    if (correct) return;
+    entry = {
+      device_id: deviceId, question_id: questionId, mastery: 0, review_count: 0,
+      first_wrong_at: nowIso(), attempt_history_json: [],
+    };
+    runtime.wrongBook.push(entry);
+  }
+  entry.mastery = Math.max(0, Math.min(5, entry.mastery + (correct ? 1 : -1)));
+  if (correct) entry.review_count += 1;
+  entry.last_result = correct ? 'correct' : 'wrong';
+  const reviewBase = dailyDate ? Date.parse(`${dailyDate}T00:00:00+08:00`) : Date.now();
+  entry.next_review_at = new Date(reviewBase + reviewIntervals[entry.mastery] * 86400000).toISOString();
+  entry.attempt_id = attemptId;
+  entry.daily_date = dailyDate;
+  if (attemptId) entry.attempt_history_json = [...(entry.attempt_history_json || []), attemptId];
+}
+
 export function listWrongBook(deviceId, runtime) {
-  return runtime.wrongBook.filter(w => w.device_id === deviceId).map(w => ({
-    ...w,
-    question: runtime.questions.find(q => q.id === w.question_id),
-    attempt: runtime.attempts.find(a => a.id === w.attempt_id),
-  }));
+  return runtime.wrongBook.filter(w => w.device_id === deviceId).map(w => {
+    const daily = w.daily_date ? runtime.dailyQuestions.get(`${deviceId}:${w.daily_date}`) : null;
+    return {
+      ...w,
+      question: daily?.question_snapshot || runtime.questions.find(q => q.id === w.question_id),
+      attempt: w.attempt_id ? runtime.attempts.find(a => a.id === w.attempt_id) : null,
+      daily_answer: daily?.judgment ? {
+        date: daily.date, correct: daily.judgment.correct, answer_kind: daily.judgment.answer_kind,
+        answer_raw: daily.answer_raw || null, feedback: daily.judgment.feedback,
+      } : null,
+    };
+  });
 }
 export function todayReview(deviceId, runtime) {
   const now = nowIso();

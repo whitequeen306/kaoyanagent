@@ -5,6 +5,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { application, errorResponse } from '../functions/routes.mjs';
 import { createLocalRuntime } from '../functions/runtime.mjs';
+import { realQuestions } from '../functions/real-data.mjs';
 import { composePaper } from '../functions/compose.mjs';
 import { createPaperJob } from '../functions/generate.mjs';
 import { createPersistence } from '../dev/persist.mjs';
@@ -644,6 +645,139 @@ test('writes require a server-issued session token', async () => {
   assert.equal(response.status, 401);
 });
 
+// The divergent improper integral is option D. Pin it so the calendar cannot change the grading path.
+const dailyChoice = realQuestions.find(question => question.id === '0f5aed8b-8372-5fa6-afa3-0320d5fc25f7');
+const dailyBlank = {
+  id: 'ad100000-0000-4000-8000-000000000001', section: 'blank', qtype: 'fill_blank',
+  stem_latex: '已知 $f(x)=\\sin x$，则其导函数为____。', answer_latex: '\\cos x',
+  generator_meta_json: { approach_raw: '使用正弦函数的求导公式。', solution_steps: ['正弦函数的导数是余弦函数。'] },
+};
+const dailyProof = {
+  id: 'ad100000-0000-4000-8000-000000000002', section: 'solution', qtype: 'free_response',
+  stem_latex: '设 $a,b$ 为正实数。',
+  sub_items_json: [
+    { label: '(1)', prompt_latex: '证明 $a/b+b/a\\ge 2$。', answer_latex: '$a/b+b/a\\ge 2$', score_x2: 6 },
+    { label: '(2)', prompt_latex: '求等号成立的充要条件。', answer_latex: '$a=b$', score_x2: 4 },
+  ],
+  answer_latex: '$a/b+b/a\\ge 2$，等号当且仅当 $a=b$ 成立。',
+  generator_meta_json: {
+    approach_raw: '通分后把差写成平方，再判断何时为零。',
+    solution_steps: ['通分得 $a/b+b/a-2=(a-b)^2/(ab)$。', '分母为正，分子非负且仅在 $a=b$ 时为零。'],
+  },
+};
+const alternateProof = '(1) 由均值不等式，两正数 a/b 和 b/a 的和至少是其几何平均数的两倍，即 2。\n(2) 等号等价于 a/b=b/a，由正性得 a=b，反之亦然。';
+const pngAnswer = base64 => ({ mime_type: 'image/png', data_url: `data:image/png;base64,${base64}` });
+const choiceAImage = pngAnswer('iVBORw0KGgoAAAANSUhEUgAAAAcAAAAJCAAAAADbM2l/AAAAH0lEQVR4nGP4DwEM//8zMIAIEAtMwmkQwCb+H6YaBAA2ZizUk1YeIQAAAABJRU5ErkJggg==');
+const choiceDImage = pngAnswer('iVBORw0KGgoAAAANSUhEUgAAAAcAAAAJCAAAAADbM2l/AAAAGklEQVR4nGP4DwEM/xkYGBjANIRHmIaqhwAASlIs1NRq1uYAAAAASUVORK5CYII=');
+// Two lines showing the AM–GM proof and the equality condition, distinct from the reference's square argument.
+const proofImage = pngAnswer('iVBORw0KGgoAAAANSUhEUgAAAKIAAAAdAQAAAAABFYoWAAABeElEQVR42o2SQUtUUQCFv3ffE97CgddORGWUoG2LNoEw4z/wH6gg2qKFUAsjnW60SChwlhJBtdKdMuugawW1aDE721SvEBUU5uUkb8K577QpXThgZ/lx4MDHCcTFbBt6pTeN2JrsEuFDinRseijSTPnl6L+uLHyFcYI6Tcxuo/BLZaLfP9/xYZbVWbCYTomw8uaeDWvDZIPc6pBANED7yfj2tanTkxbXcxggSzE7tmRzd/NBn4VN0GeSFJMA2PmaB8pAQuYwB23jXcWdLBuNNffer+0vqA6FpJYkFfridd8X3yQXnHlQ0MtDcKmHy6nSM/oW8pTC4lwrpcBmPMWMnO8kf909w/C4VdmYHqnzsXE4VVX1+JhJIjLZ0XX3fOVGo++FJl51S00wuxgbPnQs0o955OjnKpghvEWvWdFt/HKVI2Iw8B2wLBIThI6Yoy3MjyuVpXZaXePTL2Q1c/dOZw6US165VEiSVJNOXaBOTDe68J0Yov+z8wcLiq1rKq9cAAAAAABJRU5ErkJggg==');
+
+function dailyFixture(question, llm) {
+  const runtime = createLocalRuntime({ llm });
+  runtime.questions = [{
+    source: 'ai', status: 'published', is_fixture: false, difficulty: 'easy', score_x2: 10,
+    knowledge: [{ code: 'GS1', role: 'main', weight: 100 }], ...structuredClone(question),
+  }];
+  const handle = application(runtime);
+  const submit = async (answer, requestKey = key()) => call(handle, '/api/daily-question/submit', {
+    method: 'POST', key: requestKey, body: { date: (await getDaily(handle)).date, question_id: question.id, ...answer },
+  });
+  return { runtime, handle, submit };
+}
+
+async function getDaily(handle) {
+  const response = await call(handle, '/api/daily-question');
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+  return response.body;
+}
+
+async function wrongBookItems(handle, deviceId = device) {
+  const response = await raw(handle, '/api/wrong-book', { headers: { 'x-device-id': deviceId } });
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+  return response.body.items;
+}
+
+function messageText({ content }) {
+  return typeof content === 'string' ? content : content.filter(block => block.type === 'text').map(block => block.text).join('\n');
+}
+
+function modelImageUrls(messages) {
+  return messages.filter(message => message.role === 'user' && Array.isArray(message.content))
+    .flatMap(message => message.content.filter(block => block.type === 'image_url').map(block => block.image_url.url));
+}
+
+function assertModelContext(messages, fragments) {
+  const text = messages.filter(message => message.role === 'user').map(messageText).join('\n');
+  for (const fragment of fragments) {
+    // The existing prompt embeds JSON, so a LaTeX backslash or newline can be escaped on the wire.
+    assert.ok(text.includes(fragment) || text.includes(JSON.stringify(fragment).slice(1, -1)), `Missing in model context: ${fragment}`);
+  }
+}
+
+function assertDailyReview(result, question) {
+  assert.ok(result.review, 'A terminal judgment must expose the bank review');
+  assert.equal(result.review.correct_answer, question.answer_latex);
+  assert.equal(result.review.explanation, question.generator_meta_json.approach_raw);
+  assert.deepEqual(result.review.solution_steps, question.generator_meta_json.solution_steps);
+  for (const field of ['score', 'score_x2', 'max_score_x2', 'score_rate_bp', 'total_score_x2']) {
+    assert.equal(field in result || field in result.review, false, `Unexpected daily score field: ${field}`);
+  }
+}
+
+function assertNoPaperOrAttempt(runtime) {
+  assert.equal(runtime.papers.length, 0);
+  assert.equal(runtime.attempts.length, 0);
+}
+
+function assertImageDiscarded(runtime, image) {
+  const records = [...runtime.dailyQuestions.values(), ...runtime.wrongBook, ...runtime.idempotency.values()];
+  const base64 = image.data_url.split(',')[1];
+  assert.equal(JSON.stringify(records).includes(base64), false, 'Daily history and idempotency must discard the image');
+}
+
+for (const [kind, question, answer] of [
+  ['missing', dailyProof, {}], ['empty', dailyProof, { answer_raw: '' }],
+  ['whitespace-only', dailyProof, { answer_raw: ' \t\n　' }], ['unlisted option', dailyChoice, { answer_raw: 'E' }],
+]) {
+  test(`daily question rejects ${kind} input without an image before any judgment`, async t => {
+    const llm = t.mock.fn(async () => JSON.stringify({ correct: false, feedback: '不应调用判题。' }));
+    const { runtime, handle, submit } = dailyFixture(question, llm);
+    const response = await submit(answer);
+    assert.equal(response.status, 400, JSON.stringify(response.body));
+    const refreshed = await getDaily(handle);
+    assert.equal(refreshed.status, 'available');
+    assert.equal(refreshed.result, null);
+    assert.deepEqual(await wrongBookItems(handle), []);
+    assert.equal(llm.mock.callCount(), 0);
+    assertNoPaperOrAttempt(runtime);
+  });
+}
+
+test('yesterday’s page cannot submit or explain today’s instance of the same question', async () => {
+  const { runtime, handle, submit } = dailyFixture(dailyChoice);
+  assert.equal((await submit({ date: '2000-01-01', answer_raw: 'A' })).status, 409);
+  assert.equal((await submit({ date: undefined, answer_raw: 'A' })).status, 409);
+  assert.equal((await call(handle, '/api/daily-question/explain', { method: 'POST', key: key(), body: { prompt: '讲解' } })).status, 409);
+  const explain = await call(handle, '/api/daily-question/explain', { method: 'POST', key: key(), body: { date: '2000-01-01' } });
+  assert.equal(explain.status, 409);
+  assert.equal((await getDaily(handle)).result, null);
+  assert.equal(runtime.wrongBook.length, 0);
+});
+
+test('a missing essential diagram replaces an unanswered daily assignment but preserves a final result', async () => {
+  const runtime = createLocalRuntime();
+  const held = runtime.questions.find(q => q.year === 2009 && q.seq_label === '6');
+  assert.equal(held.status, 'pending_review');
+  assert.equal(runtime.questions.find(q => q.year === 2008 && q.seq_label === '6').status, 'published');
+  const handle = application(runtime);
+  const { date } = await getDaily(handle);
+  const record = { ...runtime.dailyQuestions.get(`${device}:${date}`), question_id: held.id, question_snapshot: { ...held, status: 'published' } };
+  runtime.dailyQuestions.set(`${device}:${date}`, record);
+  assert.notEqual((await getDaily(handle)).question.id, held.id);
+  runtime.dailyQuestions.set(`${device}:${date}`, { ...record, judgment: { correct: false, answer_kind: 'text', submitted_at: new Date().toISOString() } });
+  assert.equal((await getDaily(handle)).question.id, held.id);
+});
+
 test('daily question prioritizes due weak questions and remains fixed for the day', async () => {
   const runtime = createLocalRuntime();
   const candidate = runtime.questions.find(question => question.source === 'real' && !question.is_fixture && question.qtype === 'single_choice' && question.status === 'published');
@@ -659,81 +793,338 @@ test('daily question prioritizes due weak questions and remains fixed for the da
   assert.equal(first.body.question.id, candidate.id);
   assert.equal(first.body.status, 'available');
   assert.equal(first.body.question.answer_latex, undefined);
+  assert.equal(first.body.question.score_x2, undefined);
+  assert.equal(first.body.question.sub_items_json?.some(item => 'score_x2' in item) || false, false);
   assert.equal(first.body.reason.code, 'due_review');
   const second = await call(handle, '/api/daily-question');
   assert.equal(second.body.question.id, first.body.question.id);
   const expectedAnswer = inferAnswer(runtime, candidate.id);
   const invalid = await call(handle, '/api/daily-question/submit', { method: 'POST', key: key(), body: {
-    question_id: candidate.id, answer_raw: expectedAnswer, duration_sec: -1, confirmed_latex: {},
+    date: first.body.date, question_id: candidate.id, answer_raw: expectedAnswer, duration_sec: -1, confirmed_latex: {},
   } });
   assert.equal(invalid.status, 400);
   runtime.questions = runtime.questions.filter(question => question.id !== candidate.id);
   const submitted = await call(handle, '/api/daily-question/submit', { method: 'POST', key: key(), body: {
-    question_id: candidate.id, answer_raw: expectedAnswer, duration_sec: 0,
+    date: first.body.date, question_id: candidate.id, answer_raw: expectedAnswer, duration_sec: 0,
   } });
   assert.equal(submitted.status, 200, JSON.stringify(submitted.body));
   assert.equal(submitted.body.status, 'submitted');
-  assert.equal(submitted.body.result.attempts.length, 1);
-  assert.equal(submitted.body.result.attempts[0].correct_answer, expectedAnswer);
-  assert.equal(runtime.attempts.at(-1).duration_sec, 0);
+  assert.equal(submitted.body.result.correct, true);
+  assert.equal(submitted.body.result.answer_kind, 'text');
+  assert.equal(submitted.body.result.score_x2, undefined);
+  assert.equal(runtime.attempts.length, 0);
   const refreshed = await call(handle, '/api/daily-question');
   assert.equal(refreshed.body.question.id, candidate.id);
   assert.equal(refreshed.body.status, 'submitted');
-  assert.equal(refreshed.body.result.score_rate_bp, 10000);
+  assert.equal(refreshed.body.result.correct, true);
+  assert.equal(refreshed.body.result.score_rate_bp, undefined);
   const afterReport = await call(handle, '/api/daily-question');
   assert.equal(afterReport.body.question.id, candidate.id);
   assert.equal(afterReport.body.status, 'submitted');
 });
 
+for (const [name, question, answer, correct] of [
+  ['correct option', dailyChoice, 'D', true], ['wrong option', dailyChoice, 'A', false],
+  ['literal fill-in answer', dailyBlank, '\\cos x', true],
+]) {
+  test(`daily question grades a ${name} locally`, async t => {
+    const llm = t.mock.fn(async () => JSON.stringify({ correct: !correct, feedback: '此题应直接核对。' }));
+    const { runtime, handle, submit } = dailyFixture(question, llm);
+    const response = await submit({ answer_raw: answer });
+    assert.equal(response.status, 200, JSON.stringify(response.body));
+    assert.equal(response.body.status, 'submitted');
+    assert.equal(response.body.result.correct, correct);
+    assert.equal(response.body.result.answer_kind, 'text');
+    assert.equal(llm.mock.callCount(), 0);
+    assertDailyReview(response.body.result, question);
+    const refreshed = await getDaily(handle);
+    assert.equal(refreshed.result.answer_raw, answer);
+    assert.equal(refreshed.result.correct, correct);
+    assertDailyReview(refreshed.result, question);
+    assertNoPaperOrAttempt(runtime);
+    if (correct) assert.deepEqual(await wrongBookItems(handle), []);
+  });
+}
+
+for (const [name, answer, correct, feedback] of [
+  ['equivalent expression', '\\cos(-x)', true, '余弦是偶函数，表达式等价。'],
+  ['different LaTeX function', '\\tan x', false, '正弦函数的导数是余弦，不是正切。'],
+]) {
+  test(`daily fill-in delegates the ${name} with its function symbols intact`, async t => {
+    const llm = t.mock.fn(async () => JSON.stringify({ correct, feedback }));
+    const { submit } = dailyFixture(dailyBlank, llm);
+    const response = await submit({ answer_raw: answer });
+    assert.equal(response.status, 200, JSON.stringify(response.body));
+    assert.equal(llm.mock.callCount(), 1, 'Only the literal bank answer can bypass the model');
+    assertModelContext(llm.mock.calls[0].arguments[0], [dailyBlank.stem_latex, dailyBlank.answer_latex, answer]);
+    assert.equal(response.body.status, 'submitted');
+    assert.equal(response.body.result.correct, correct);
+    assert.equal(response.body.result.feedback, feedback);
+  });
+}
+
+for (const kind of ['text', 'image']) {
+  test(`daily ${kind} proof accepts a different valid method with both subquestions and reference steps`, async t => {
+    const feedback = '均值不等式证明成立，等号条件也正确。';
+    const llm = t.mock.fn(async () => JSON.stringify({ correct: true, retryable: false, feedback }));
+    const { runtime, handle, submit } = dailyFixture(dailyProof, llm);
+    const initial = await getDaily(handle);
+    assert.equal(initial.result, null);
+    for (const part of initial.question.sub_items_json) {
+      assert.equal(part.answer_latex, undefined);
+      assert.equal(part.score_x2, undefined);
+    }
+    const answer = kind === 'text' ? { answer_raw: alternateProof } : { answer_raw: '证明和等号条件见图。', answer_image: proofImage };
+    const response = await submit(answer);
+    assert.equal(response.status, 200, JSON.stringify(response.body));
+    assert.equal(llm.mock.callCount(), 1);
+    const messages = llm.mock.calls[0].arguments[0];
+    assertModelContext(messages, [dailyProof.stem_latex, ...dailyProof.sub_items_json.map(part => part.prompt_latex),
+      dailyProof.answer_latex, ...dailyProof.generator_meta_json.solution_steps, answer.answer_raw]);
+    const criteria = messages.filter(message => message.role === 'system').map(messageText).join('\n');
+    assert.match(criteria, /等价|不同.{0,12}(证法|解法|方法)|alternative|equivalent/i, 'Allow equivalent mathematical reasoning');
+    assert.match(criteria, /逐问|[各每全多].{0,4}[小子]?问|漏答|(?:each|all) (?:subquestions?|parts?)/i, 'Require every part to be answered');
+    assert.deepEqual(modelImageUrls(messages), kind === 'image' ? [proofImage.data_url] : []);
+    assert.equal(response.body.status, 'submitted');
+    assert.equal(response.body.result.correct, true);
+    assert.equal(response.body.result.answer_kind, kind);
+    assert.equal(response.body.result.feedback, feedback);
+    assertDailyReview(response.body.result, dailyProof);
+    const refreshed = await getDaily(handle);
+    assert.equal(refreshed.result.correct, true);
+    if (kind === 'text') assert.equal(refreshed.result.answer_raw, alternateProof);
+    assert.deepEqual(await wrongBookItems(handle), []);
+    assertNoPaperOrAttempt(runtime);
+  });
+}
+
+test('daily proof still needs a justification when the typed conclusion literally matches the bank', async t => {
+  const feedback = '只抄了结论，没有证明不等式。';
+  const llm = t.mock.fn(async () => JSON.stringify({ correct: false, feedback }));
+  const { submit } = dailyFixture(dailyProof, llm);
+  const response = await submit({ answer_raw: dailyProof.answer_latex });
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+  assert.equal(llm.mock.callCount(), 1);
+  assert.equal(response.body.status, 'submitted');
+  assert.equal(response.body.result.correct, false);
+  assert.equal(response.body.result.feedback, feedback);
+});
+
+for (const [kind, question, answer] of [
+  ['proof', dailyProof, { answer_raw: alternateProof }],
+  ['nonliteral fill-in', dailyBlank, { answer_raw: '\\tan x' }],
+  ['image', dailyChoice, { answer_raw: '', answer_image: choiceAImage }],
+]) {
+  test(`daily ${kind} stays available when no model is configured`, async () => {
+    const { runtime, handle, submit } = dailyFixture(question);
+    const response = await submit(answer);
+    assert.equal(response.status, 503, JSON.stringify(response.body));
+    assert.equal(response.body.error.code, 'llm_not_configured');
+    const refreshed = await getDaily(handle);
+    assert.equal(refreshed.status, 'available');
+    assert.equal(refreshed.result, null);
+    assert.deepEqual(await wrongBookItems(handle), []);
+    assertNoPaperOrAttempt(runtime);
+  });
+}
+
+for (const [name, judgment] of [
+  ['explicit retry flag', { correct: false, retryable: true, feedback: '选项字母超出了照片边缘。' }],
+  ['indeterminate verdict', { correct: null, retryable: true, feedback: '只能看见字母的下半部。' }],
+  ['legacy unclear-image feedback', { correct: false, feedback: '图片无法确认最终结论。' }],
+  ['contradictory final flag on illegible handwriting', { correct: false, retryable: false, feedback: '手写答案无法辨认。' }],
+]) {
+  test(`daily image with ${name} remains unjudged until a clear replacement`, async t => {
+    const cropped = pngAnswer('iVBORw0KGgoAAAANSUhEUgAAAAcAAAAECAAAAABnrXqhAAAAFElEQVR4nGP4DwEM/xmgJAOcBwIAfq8X6efzkh4AAAAASUVORK5CYII=');
+    const llm = t.mock.fn(async () => JSON.stringify({ correct: true, retryable: false, feedback: '已能看清选择的是 D。' }));
+    llm.mock.mockImplementationOnce(async () => JSON.stringify(judgment));
+    const { runtime, handle, submit } = dailyFixture(dailyChoice, llm);
+    const first = await submit({ answer_image: cropped });
+    assert.equal(first.status, 200, JSON.stringify(first.body));
+    for (const state of [first.body, await getDaily(handle)]) {
+      assert.equal(state.status, 'available');
+      assert.equal(state.result.correct, null);
+      assert.equal(state.result.retryable, true);
+      assert.equal(state.result.review, null);
+      assert.equal(state.question.answer_latex, undefined);
+    }
+    assert.deepEqual(await wrongBookItems(handle), []);
+    assertNoPaperOrAttempt(runtime);
+    assertImageDiscarded(runtime, cropped);
+    const second = await submit({ answer_image: choiceDImage });
+    assert.equal(second.status, 200, JSON.stringify(second.body));
+    assert.equal(second.body.status, 'submitted');
+    assert.equal(second.body.result.correct, true);
+    assert.equal(second.body.result.answer_kind, 'image');
+    assertDailyReview(second.body.result, dailyChoice);
+    assert.equal((await getDaily(handle)).result.answer_raw, null);
+    assert.deepEqual(await wrongBookItems(handle), []);
+    assert.deepEqual(llm.mock.calls.map(call => modelImageUrls(call.arguments[0])), [[cropped.data_url], [choiceDImage.data_url]]);
+  });
+}
+
+test('a legible photo with a missing subanswer counts as an incorrect solution', async () => {
+  const { handle, submit } = dailyFixture(dailyProof, async () => JSON.stringify({ correct: false, retryable: false, feedback: '图片清晰，但第二问不完整。' }));
+  const result = await submit({ answer_image: proofImage });
+  assert.equal(result.body.status, 'submitted');
+  assert.equal(result.body.result.correct, false);
+  assert.equal((await wrongBookItems(handle)).length, 1);
+});
+
+test('daily image rejects unsupported formats and oversized uploads', async () => {
+  const { submit } = dailyFixture(dailyChoice);
+  const invalid = await submit({ answer_image: { mime_type: 'image/gif', data_url: 'data:image/gif;base64,AAAA' } });
+  assert.equal(invalid.status, 400);
+  const oversized = await submit({ answer_image: { mime_type: 'image/png', data_url: `data:image/png;base64,${'A'.repeat(5600000)}` } });
+  assert.equal(oversized.status, 413);
+});
+
+for (const [kind, question, answer, feedback] of [
+  ['text', dailyProof, { answer_raw: '(1) 由均值不等式得 a/b+b/a ≥ 2。\n(2) 等号仅当 a=b=1。' }, '第二问漏掉了其他相等的正数。'],
+  ['image', dailyChoice, { answer_image: choiceAImage }, '图片中清楚地选了 A。A 的积分收敛，发散的选项是 D。'],
+]) {
+  test(`daily wrong ${kind} answer is device-scoped and can be reviewed after a SQLite restart`, async t => {
+    const llm = t.mock.fn(async () => JSON.stringify({ correct: false, feedback }));
+    const { runtime, handle, submit } = dailyFixture(question, llm);
+    const first = await submit(answer);
+    assert.equal(first.status, 200, JSON.stringify(first.body));
+    assert.equal(first.body.status, 'submitted');
+    assert.equal(first.body.result.correct, false);
+    assert.equal(llm.mock.callCount(), 1);
+    const answerRaw = answer.answer_raw ?? null;
+    const expected = { date: first.body.date, correct: false, answer_kind: kind, answer_raw: answerRaw, feedback };
+
+    async function checkSavedAnswer(activeHandle) {
+      const state = await getDaily(activeHandle);
+      assert.equal(state.question.id, question.id);
+      assert.equal(state.status, 'submitted');
+      assert.equal(state.result.correct, false);
+      assert.equal(state.result.answer_raw, answerRaw);
+      assert.equal(state.result.answer_kind, kind);
+      assert.equal(state.result.feedback, feedback);
+      assertDailyReview(state.result, question);
+      const entries = await wrongBookItems(activeHandle);
+      assert.equal(entries.length, 1);
+      assert.equal(entries[0].question_id, question.id);
+      assert.deepEqual(entries[0].daily_answer, expected);
+      assert.deepEqual(await wrongBookItems(activeHandle, 'another-device-0002'), []);
+    }
+
+    await checkSavedAnswer(handle);
+    assertNoPaperOrAttempt(runtime);
+    const file = path.join(os.tmpdir(), `daily-${kind}-${crypto.randomUUID()}.db`);
+    try {
+      createPersistence(runtime, file).save();
+      const restored = createLocalRuntime();
+      createPersistence(restored, file).load();
+      await checkSavedAnswer(application(restored));
+      assertNoPaperOrAttempt(restored);
+      if (kind === 'image') {
+        assertImageDiscarded(runtime, answer.answer_image);
+        assertImageDiscarded(restored, answer.answer_image);
+      }
+    } finally {
+      if (fs.existsSync(file)) fs.unlinkSync(file);
+    }
+  });
+}
+
+test('daily terminal replays with the same or a new key keep the original result and mastery', async t => {
+  const feedback = '手写答案选 A，而发散的是 D。';
+  const llm = t.mock.fn(async () => JSON.stringify({ correct: false, retryable: false, feedback }));
+  const { runtime, handle, submit } = dailyFixture(dailyChoice, llm);
+  // Start above zero so an accidental second mastery decrement is observable.
+  runtime.wrongBook.push({
+    device_id: device, question_id: dailyChoice.id, attempt_id: null, attempt_history_json: [],
+    mastery: 3, review_count: 2, next_review_at: new Date().toISOString(), last_result: 'correct',
+  });
+  const firstKey = key();
+  const answer = { answer_image: choiceAImage };
+  const first = await submit(answer, firstKey);
+  assert.equal(first.status, 200, JSON.stringify(first.body));
+  assert.equal(first.body.status, 'submitted');
+  assert.equal(first.body.result.correct, false);
+  const afterFirst = await wrongBookItems(handle);
+  assert.equal(afterFirst.length, 1);
+  assert.equal(afterFirst[0].daily_answer.feedback, feedback);
+  for (const [body, requestKey] of [[answer, firstKey], [answer, key()], [{ answer_raw: 'D' }, key()]]) {
+    const replay = await submit(body, requestKey);
+    assert.equal(replay.status, 200, JSON.stringify(replay.body));
+    assert.deepEqual(replay.body.result, first.body.result);
+    assert.deepEqual(await wrongBookItems(handle), afterFirst);
+  }
+  assert.equal(llm.mock.callCount(), 1);
+  assertNoPaperOrAttempt(runtime);
+});
+
+test('daily selection skips a recent mistake until it is due, then prefers it over unseen questions', async t => {
+  const day = 86400000;
+  const start = Date.parse('2026-03-10T12:00:00+08:00');
+  t.mock.timers.enable({ apis: ['Date'], now: start });
+  const { runtime, handle, submit } = dailyFixture(dailyChoice);
+  const wrong = await submit({ answer_raw: 'A' });
+  assert.equal(wrong.status, 200, JSON.stringify(wrong.body));
+  assert.equal(wrong.body.result.correct, false);
+  // Keep an unseen candidate in the pool even after tomorrow's non-due selection.
+  runtime.questions.push(...realQuestions.filter(q => q.qtype === 'single_choice' && q.status === 'published' && q.id !== dailyChoice.id).slice(0, 2));
+  const [entry] = await wrongBookItems(handle);
+  assert.equal(entry.daily_answer.date, wrong.body.date);
+  assert.ok(Date.parse(entry.next_review_at) > start);
+  // Fix the review appointment so two separate daily allocations straddle it within the seven-day window.
+  const dueAt = start + 2 * day;
+  runtime.wrongBook[0].next_review_at = new Date(dueAt).toISOString();
+  t.mock.timers.setTime(start + day);
+  const tomorrow = await getDaily(handle);
+  assert.notEqual(tomorrow.question.id, dailyChoice.id);
+  t.mock.timers.setTime(dueAt);
+  const due = await getDaily(handle);
+  assert.notEqual(due.date, tomorrow.date);
+  assert.equal(due.question.id, dailyChoice.id);
+  assert.equal(due.reason.code, 'due_review');
+  assert.equal(due.status, 'available');
+});
+
 test('daily question uses the configured AI provider for explanation and follow-up', async () => {
   const prompts = [];
-  const runtime = createLocalRuntime({ llm: async messages => {
-    prompts.push(messages.at(-1).content);
+  const { handle, submit } = dailyFixture(dailyChoice, async messages => {
+    prompts.push(messageText(messages.at(-1)));
     return `针对你的作答给出建议（第 ${prompts.length} 次）。`;
-  } });
-  const handle = application(runtime);
-  const daily = await call(handle, '/api/daily-question');
-  const questionId = daily.body.question.id;
-  const submitted = await call(handle, '/api/daily-question/submit', { method: 'POST', key: key(), body: {
-    question_id: questionId, answer_raw: inferAnswer(runtime, questionId),
-  } });
+  });
+  const submitted = await submit({ answer_raw: 'D' });
   assert.equal(submitted.status, 200, JSON.stringify(submitted.body));
   const explanation = await call(handle, '/api/daily-question/explain', { method: 'POST', key: key(), body: {
-    prompt: '请再提醒我一个容易错的地方。',
+    date: submitted.body.date, prompt: '请再提醒我一个容易错的地方。',
   } });
   assert.equal(explanation.status, 200, JSON.stringify(explanation.body));
   assert.equal(explanation.body.ai_messages.at(-1).role, 'assistant');
   assert.ok(explanation.body.ai_messages.at(-1).content.includes('第 1 次'));
   const followUp = await call(handle, '/api/daily-question/explain', { method: 'POST', key: key(), body: {
-    prompt: '为什么这个步骤重要？',
+    date: submitted.body.date, prompt: '为什么这个步骤重要？',
   } });
   assert.equal(followUp.status, 200, JSON.stringify(followUp.body));
   assert.equal(followUp.body.ai_messages.filter(message => message.role === 'assistant').length, 2);
-  assert.equal(prompts.length, 2);
+  assert.deepEqual(prompts, ['请再提醒我一个容易错的地方。', '为什么这个步骤重要？']);
 });
 
 test('daily AI explanation shares one in-flight result for a repeated idempotency key', async () => {
+  const { runtime, handle, submit } = dailyFixture(dailyChoice);
+  const submitted = await submit({ answer_raw: 'D' });
+  assert.equal(submitted.status, 200, JSON.stringify(submitted.body));
+  assert.equal(submitted.body.status, 'submitted');
   let calls = 0;
-  let entered;
-  const enteredPromise = new Promise(resolve => { entered = resolve; });
-  let release;
-  const releasePromise = new Promise(resolve => { release = resolve; });
-  const runtime = createLocalRuntime({ llm: async () => {
+  const entered = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  runtime.llm = async () => {
     calls += 1;
-    entered();
-    await releasePromise;
+    entered.resolve();
+    await release.promise;
     return '同一请求只生成一次。';
-  } });
-  const handle = application(runtime);
-  const daily = await call(handle, '/api/daily-question');
-  await call(handle, '/api/daily-question/submit', { method: 'POST', key: key(), body: {
-    question_id: daily.body.question.id, answer_raw: inferAnswer(runtime, daily.body.question.id),
-  } });
+  };
   const sameKey = key();
-  const first = call(handle, '/api/daily-question/explain', { method: 'POST', key: sameKey, body: { prompt: '讲解' } });
-  await enteredPromise;
-  const second = call(handle, '/api/daily-question/explain', { method: 'POST', key: sameKey, body: { prompt: '讲解' } });
-  release();
+  const first = call(handle, '/api/daily-question/explain', { method: 'POST', key: sameKey, body: { date: submitted.body.date, prompt: '讲解' } });
+  assert.equal(await Promise.race([entered.promise, first]), undefined, 'Explanation must reach the model before it can return');
+  const second = call(handle, '/api/daily-question/explain', { method: 'POST', key: sameKey, body: { date: submitted.body.date, prompt: '讲解' } });
+  release.resolve();
   const [one, two] = await Promise.all([first, second]);
   assert.equal(one.status, 200, JSON.stringify(one.body));
   assert.equal(two.status, 200, JSON.stringify(two.body));
