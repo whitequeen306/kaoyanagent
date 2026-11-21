@@ -29,7 +29,10 @@ const server = http.createServer(async (req, res) => {
   } catch (error) {
     response = errorResponse(error);
   } finally {
-    if (req.method !== 'GET') await persistence.save();
+    if (req.method !== 'GET' || runtime.dailyQuestionsDirty) {
+      await persistence.save();
+      runtime.dailyQuestionsDirty = false;
+    }
   }
   res.writeHead(response.status, Object.fromEntries(response.headers));
   res.end(Buffer.from(await response.arrayBuffer()));

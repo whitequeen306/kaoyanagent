@@ -53,6 +53,32 @@
       "responseProperties": ["settings", "latency_ms"]
     },
     {
+      "name": "get_daily_question",
+      "method": "GET",
+      "path": "/api/daily-question",
+      "responseProperties": ["date", "status", "reason", "question", "result", "ai_messages"]
+    },
+    {
+      "name": "submit_daily_question",
+      "method": "POST",
+      "path": "/api/daily-question/submit",
+      "requestRequired": ["question_id", "answer_raw"],
+      "requestProperties": {
+        "question_id": {"type": "string", "format": "uuid"},
+        "answer_raw": {"type": "string", "maxLength": 20000},
+        "confirmed_latex": {"type": ["string", "null"]},
+        "duration_sec": {"type": ["integer", "null"], "minimum": 0}
+      },
+      "responseProperties": ["date", "status", "reason", "question", "result", "ai_messages"]
+    },
+    {
+      "name": "explain_daily_question",
+      "method": "POST",
+      "path": "/api/daily-question/explain",
+      "requestProperties": {"prompt": {"type": "string", "maxLength": 1000}},
+      "responseProperties": ["date", "status", "reason", "question", "result", "ai_messages"]
+    },
+    {
       "name": "get_agent_state",
       "method": "GET",
       "path": "/api/agent/state",

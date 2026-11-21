@@ -9,6 +9,7 @@ const messages: Record<string, string> = {
   quota_exceeded: '今日生成额度已用完，请明天再试或使用真题。',
   unauthorized_device: '设备身份无效，请刷新页面重新开始。',
   idempotency_conflict: '相同请求标识对应了不同内容，请刷新后重试。',
+  state_conflict: '当前每日题状态已变化，请刷新后重试。',
   invalid_input: '提交的内容不完整或格式不正确。',
   not_found: '找不到这张试卷或这道题，可能已过期。',
   not_mastered: '这套仿真题还没有全部答对，掌握度达到 100% 后才能移出错题本。',

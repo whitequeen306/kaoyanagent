@@ -43,7 +43,8 @@ export function gradeSubmission(paper, submission, runtime) {
   if (answerMap.size !== submission.answers.length) fail('invalid_input');
   const attempts = [];
   for (const item of paper.items_json) {
-    const question = runtime.questions.find(q => q.id === item.question_id);
+    const question = runtime.questions.find(q => q.id === item.question_id)
+      || item.question;
     if (!question) fail('not_found', 404);
     const input = answerMap.get(question.id);
     const raw = input?.answer_raw || '';
@@ -55,7 +56,7 @@ export function gradeSubmission(paper, submission, runtime) {
         score_x2: 0, max_score_x2: question.score_x2, score_rate_bp: 0,
         rubric_json: question.rubric_json, rubric_version: question.rubric_version,
         error_tags_json: pending ? ['pending_rubric_grading'] : ['unanswered'],
-        duration_sec: input?.duration_sec || null, created_at: nowIso(),
+        duration_sec: input?.duration_sec ?? null, created_at: nowIso(),
         grading_status: pending ? 'pending_review' : 'completed', feedback: pending ? '解答题待 rubric 模型复核' : '未作答',
       });
       continue;
@@ -69,7 +70,7 @@ export function gradeSubmission(paper, submission, runtime) {
       score_rate_bp: question.score_x2 ? Math.round(result.score_x2 * 10000 / question.score_x2) : 0,
       rubric_json: question.rubric_json, rubric_version: question.rubric_version,
       error_tags_json: result.correct ? [] : [raw.trim() ? 'answer_mismatch' : 'unanswered'],
-      duration_sec: input?.duration_sec || null, created_at: nowIso(),
+      duration_sec: input?.duration_sec ?? null, created_at: nowIso(),
       grading_status: 'completed', feedback: result.reason,
     });
   }

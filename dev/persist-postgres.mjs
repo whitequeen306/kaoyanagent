@@ -36,6 +36,7 @@ export function createPersistence(runtime, connectionString) {
         );
         CREATE TABLE IF NOT EXISTS usage (key text PRIMARY KEY, value integer NOT NULL);
         CREATE TABLE IF NOT EXISTS agent_states (device_id text PRIMARY KEY, payload jsonb NOT NULL, updated_at timestamptz);
+        CREATE TABLE IF NOT EXISTS daily_questions (device_id text NOT NULL, date date NOT NULL, payload jsonb NOT NULL, PRIMARY KEY (device_id, date));
       `);
     }
     return schemaReady;
@@ -60,6 +61,8 @@ export function createPersistence(runtime, connectionString) {
         .map(row => [row.device_id, parse(row.payload)]));
       runtime.agentStates = new Map((await pool.query('SELECT device_id, payload FROM agent_states')).rows
         .map(row => [row.device_id, parse(row.payload)]));
+      runtime.dailyQuestions = new Map((await pool.query('SELECT device_id, date, payload FROM daily_questions')).rows
+        .map(row => [`${row.device_id}:${String(row.date).slice(0, 10)}`, parse(row.payload)]));
       const meta = new Map((await pool.query('SELECT key, value FROM meta')).rows.map(row => [row.key, row.value]));
       if (meta.get('version') !== String(VERSION)) return;
       if (meta.get('saved_date') === today()) {
@@ -82,7 +85,7 @@ export function createPersistence(runtime, connectionString) {
       client = await pool.connect();
       await ensureSchema();
       await client.query('BEGIN');
-      await client.query('DELETE FROM generated_questions; DELETE FROM papers; DELETE FROM attempts; DELETE FROM wrong_book; DELETE FROM reports; DELETE FROM device_sessions; DELETE FROM ai_settings; DELETE FROM usage; DELETE FROM meta; DELETE FROM agent_states;');
+      await client.query('DELETE FROM generated_questions; DELETE FROM papers; DELETE FROM attempts; DELETE FROM wrong_book; DELETE FROM reports; DELETE FROM device_sessions; DELETE FROM ai_settings; DELETE FROM usage; DELETE FROM meta; DELETE FROM agent_states; DELETE FROM daily_questions;');
       for (const question of runtime.questions.filter(item => !baseQuestionIds.has(item.id))) {
         await client.query('INSERT INTO generated_questions (id, payload) VALUES ($1, $2::jsonb)', [question.id, JSON.stringify(question)]);
       }
@@ -111,6 +114,10 @@ export function createPersistence(runtime, connectionString) {
       for (const [deviceId, state] of runtime.agentStates.entries()) {
         await client.query('INSERT INTO agent_states (device_id, payload, updated_at) VALUES ($1, $2::jsonb, $3)',
           [deviceId, JSON.stringify(state), state.updated_at || new Date().toISOString()]);
+      }
+      for (const record of runtime.dailyQuestions.values()) {
+        await client.query('INSERT INTO daily_questions (device_id, date, payload) VALUES ($1, $2, $3::jsonb)',
+          [record.device_id, record.date, JSON.stringify(record)]);
       }
       for (const [key, value] of runtime.usage.entries()) {
         await client.query('INSERT INTO usage (key, value) VALUES ($1, $2)', [key, Number(value) || 0]);

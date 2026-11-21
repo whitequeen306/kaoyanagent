@@ -22,6 +22,28 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 .topbar nav button { border: 0; background: transparent; color: var(--site-muted); padding: 9px 12px; border-radius: 8px; }
 .topbar nav button:hover { background: #e9ece5; color: var(--site-fg); }
 main { max-width: 1180px; margin: 0 auto; padding: 0 28px 70px; }
+.daily-card { margin-top: 30px; background: #eef5ef; border: 1px solid #cbded0; border-radius: 18px; padding: 24px; }
+.daily-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 18px; }
+.daily-card-head h2 { margin: 9px 0 6px; font-size: 25px; letter-spacing: -.02em; }
+.daily-card-head p { margin: 0; color: #587063; font-size: 12px; line-height: 1.7; }
+.daily-question { margin-top: 20px; background: #fff; border: 1px solid var(--site-border); border-radius: 13px; padding: 22px 24px; }
+.daily-question.correct { border-left: 4px solid #3a8a67; }
+.daily-question.incorrect { border-left: 4px solid #b15b43; }
+.daily-submit-row { display: flex; justify-content: space-between; align-items: center; gap: 14px; margin-top: 22px; padding-top: 17px; border-top: 1px solid var(--site-border); }
+.daily-submit-row span { color: var(--site-muted); font-size: 11px; }
+.daily-answer-textarea { width: 100%; resize: vertical; border: 1px solid var(--site-border); border-radius: 8px; padding: 12px; background: #fcfcfa; }
+.daily-ai-panel { margin-top: 18px; border: 1px solid #cbded0; border-radius: 12px; padding: 16px; background: #f8fbf7; }
+.daily-ai-panel > div:first-child strong, .daily-ai-panel > div:first-child span { display: block; }
+.daily-ai-panel > div:first-child span { color: var(--site-muted); font-size: 11px; margin-top: 4px; }
+.daily-ai-messages { display: grid; gap: 9px; margin-top: 13px; }
+.daily-ai-message { display: flex; gap: 9px; align-items: flex-start; font-size: 12px; line-height: 1.8; white-space: pre-wrap; }
+.daily-ai-message > span { flex: 0 0 auto; color: var(--site-accent); font-size: 11px; font-weight: 700; }
+.daily-ai-message.user > span { color: var(--site-muted); }
+.daily-ai-actions { display: flex; gap: 9px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
+.daily-ai-actions .primary { padding: 9px 13px; font-size: 12px; }
+.daily-ai-followup { display: flex; flex: 1 1 260px; gap: 6px; }
+.daily-ai-followup input { min-width: 0; flex: 1; border: 1px solid var(--site-border); border-radius: 8px; padding: 9px 11px; background: #fff; font-size: 12px; }
+.daily-ai-followup button { border: 1px solid var(--site-border); border-radius: 8px; background: #fff; color: var(--site-accent); padding: 8px 12px; font-size: 12px; }
 .intro { padding: 52px 0 36px; max-width: 720px; }
 .eyebrow { color: var(--site-accent); font-size: 12px; letter-spacing: .14em; font-weight: 700; text-transform: uppercase; }
 h1 { font-size: clamp(30px, 4vw, 46px); line-height: 1.2; letter-spacing: -.035em; margin: 13px 0 15px; font-weight: 750; }

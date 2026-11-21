@@ -186,6 +186,19 @@ CREATE TABLE app.device_sessions (
   expires_at timestamptz NOT NULL
 );
 
+CREATE TABLE app.daily_questions (
+  device_id text NOT NULL,
+  daily_date date NOT NULL,
+  question_id uuid NOT NULL,
+  question_snapshot jsonb NOT NULL,
+  reason_json jsonb NOT NULL,
+  paper_instance_id uuid,
+  ai_messages jsonb NOT NULL DEFAULT '[]'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (device_id, daily_date)
+);
+
 CREATE INDEX questions_paper_idx ON app.questions (paper_id);
 CREATE INDEX questions_pool_idx ON app.questions (status, source, qtype, difficulty);
 CREATE INDEX question_knowledge_node_idx ON app.question_knowledge (node_id);

@@ -2,9 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { MathText } from './components/MathText';
 import { PdfPaper } from './components/PdfPaper';
 import { AgentPanel } from './components/AgentPanel';
+import { DailyQuestionCard } from './components/DailyQuestionCard';
 import { pdfFileName, pickPdfDestination, savePdfElement } from './lib/pdf';
 import { deviceId, difficultyLabel, formatScore, request } from './lib/api';
-import type { Difficulty, GradeResult, Knowledge, Paper, PaperMode, Qtype, SourceMode } from './types';
+import type { DailyQuestionState, Difficulty, GradeResult, Knowledge, Paper, PaperMode, Qtype, SourceMode } from './types';
 
 const qtypeOptions: { value: Qtype; label: string }[] = [
   { value: 'single_choice', label: '选择题' }, { value: 'fill_blank', label: '填空题' }, { value: 'free_response', label: '解答题' },
@@ -91,6 +92,11 @@ export default function App() {
   const [trends, setTrends] = useState<any[]>([]);
   const [showMathHelp, setShowMathHelp] = useState(false);
   const [elapsed, setElapsed] = useState(0);
+  const [dailyQuestion, setDailyQuestion] = useState<DailyQuestionState | null>(null);
+  const [dailyAnswer, setDailyAnswer] = useState('');
+  const [dailyBusy, setDailyBusy] = useState(false);
+  const [dailyAiBusy, setDailyAiBusy] = useState(false);
+  const [dailyAiPrompt, setDailyAiPrompt] = useState('');
 
   useEffect(() => {
     if (!paper || result) return;
@@ -104,6 +110,10 @@ export default function App() {
       setKnowledge(data.items);
     }).catch(e => setError(`知识点加载失败：${e instanceof Error ? e.message : '未知错误'}`));
     request<any>('/api/ai-settings').then(setAiSettings).catch(() => {});
+    request<DailyQuestionState>('/api/daily-question').then(data => {
+      setDailyQuestion(data);
+      setDailyAnswer(data.result?.attempts[0]?.answer_raw || '');
+    }).catch(() => {});
     const savedId = localStorage.getItem('kaoyan-paper-id');
     if (savedId) {
       request<Paper>(`/api/papers/${savedId}`).then(data => {
@@ -287,6 +297,29 @@ export default function App() {
       setTimeout(() => document.getElementById('grade-result')?.scrollIntoView({ behavior: 'smooth' }), 50);
     } catch (e) { setError(e instanceof Error ? e.message : '判卷失败'); }
     finally { setBusy(false); }
+  }
+  async function submitDaily() {
+    if (!dailyQuestion) return;
+    setDailyBusy(true); setError('');
+    try {
+      const data = await request<DailyQuestionState>('/api/daily-question/submit', { method: 'POST', body: {
+        question_id: dailyQuestion.question.id, answer_raw: dailyAnswer,
+      } });
+      setDailyQuestion(data);
+    } catch (e) { setError(e instanceof Error ? e.message : '每日题判卷失败'); }
+    finally { setDailyBusy(false); }
+  }
+  async function askDailyAi(prompt: string) {
+    if (!dailyQuestion) return;
+    setDailyAiBusy(true); setError('');
+    try {
+      const data = await request<DailyQuestionState>('/api/daily-question/explain', { method: 'POST', body: { prompt } });
+      setDailyQuestion(data);
+      setDailyAiPrompt('');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'AI 讲解失败');
+      if (!aiSettings?.configured) openSettings();
+    } finally { setDailyAiBusy(false); }
   }
   async function loadWrong() {
     setBusy(true); setError('');
@@ -478,6 +511,17 @@ export default function App() {
     <main>
       {error && <div className="error-banner no-print" role="alert">{error}<button onClick={() => setError('')}>知道了</button></div>}
       {view === 'compose' && <>
+        {dailyQuestion && <DailyQuestionCard
+          daily={dailyQuestion}
+          answer={dailyAnswer}
+          busy={dailyBusy}
+          aiBusy={dailyAiBusy}
+          aiPrompt={dailyAiPrompt}
+          onAnswerChange={setDailyAnswer}
+          onSubmit={submitDaily}
+          onAiPromptChange={setDailyAiPrompt}
+          onAiAsk={askDailyAi}
+        />}
         <section className="intro no-print">
           <span className="eyebrow">真题 · 仿真 · 精准复习</span>
           <h1>今天，想把哪块知识练明白？</h1>

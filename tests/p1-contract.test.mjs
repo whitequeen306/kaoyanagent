@@ -412,6 +412,11 @@ test('local SQLite restores generated questions, papers, attempts and wrong book
     question_id: generated.id, score_x2: 10, max_score_x2: 10, created_at: new Date().toISOString(),
   });
   runtime.wrongBook.push({ device_id: device, question_id: 'source-question', attempt_id: 'a1', mastery: 0 });
+  runtime.dailyQuestions.set(`${device}:2026-11-20`, {
+    device_id: device, date: '2026-11-20', question_id: generated.id,
+    reason: { code: 'new_question', text: '建立基线' }, paper_id: paper.id,
+    ai_messages: [{ role: 'assistant', content: '先看定义。' }], created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+  });
   runtime.composeStats.success = 3;
   runtime.composeStats.failure = 1;
   runtime.deviceSessions.set(device, { token: 'persisted-token', expires_at: '2999-01-01' });
@@ -436,6 +441,8 @@ test('local SQLite restores generated questions, papers, attempts and wrong book
     assert.equal(restored.papers.length, 1);
     assert.equal(restored.attempts.length, 1);
     assert.equal(restored.wrongBook.length, 1);
+    assert.equal(restored.dailyQuestions.get(`${device}:2026-11-20`).question_id, generated.id);
+    assert.equal(restored.dailyQuestions.get(`${device}:2026-11-20`).ai_messages[0].content, '先看定义。');
     assert.equal(restored.composeStats.success, 3);
     assert.equal(restored.composeStats.failure, 1);
     assert.equal(restored.deviceSessions.get(device).token, 'persisted-token');
@@ -635,4 +642,119 @@ test('writes require a server-issued session token', async () => {
     device_id: device, concept_node_ids: [node], qtypes: ['single_choice'], count: 1, source_mode: 'real', mode: 'drill', difficulty: 'easy',
   } });
   assert.equal(response.status, 401);
+});
+
+test('daily question prioritizes due weak questions and remains fixed for the day', async () => {
+  const runtime = createLocalRuntime();
+  const candidate = runtime.questions.find(question => question.source === 'real' && !question.is_fixture && question.qtype === 'single_choice' && question.status === 'published');
+  assert.ok(candidate);
+  runtime.wrongBook.push({
+    device_id: device, question_id: candidate.id, attempt_id: null,
+    attempt_history_json: [], mastery: 0, next_review_at: new Date(Date.now() - 1000).toISOString(),
+    review_count: 0, last_result: 'wrong',
+  });
+  const handle = application(runtime);
+  const first = await call(handle, '/api/daily-question');
+  assert.equal(first.status, 200, JSON.stringify(first.body));
+  assert.equal(first.body.question.id, candidate.id);
+  assert.equal(first.body.status, 'available');
+  assert.equal(first.body.question.answer_latex, undefined);
+  assert.equal(first.body.reason.code, 'due_review');
+  const second = await call(handle, '/api/daily-question');
+  assert.equal(second.body.question.id, first.body.question.id);
+  const expectedAnswer = inferAnswer(runtime, candidate.id);
+  const invalid = await call(handle, '/api/daily-question/submit', { method: 'POST', key: key(), body: {
+    question_id: candidate.id, answer_raw: expectedAnswer, duration_sec: -1, confirmed_latex: {},
+  } });
+  assert.equal(invalid.status, 400);
+  runtime.questions = runtime.questions.filter(question => question.id !== candidate.id);
+  const submitted = await call(handle, '/api/daily-question/submit', { method: 'POST', key: key(), body: {
+    question_id: candidate.id, answer_raw: expectedAnswer, duration_sec: 0,
+  } });
+  assert.equal(submitted.status, 200, JSON.stringify(submitted.body));
+  assert.equal(submitted.body.status, 'submitted');
+  assert.equal(submitted.body.result.attempts.length, 1);
+  assert.equal(submitted.body.result.attempts[0].correct_answer, expectedAnswer);
+  assert.equal(runtime.attempts.at(-1).duration_sec, 0);
+  const refreshed = await call(handle, '/api/daily-question');
+  assert.equal(refreshed.body.question.id, candidate.id);
+  assert.equal(refreshed.body.status, 'submitted');
+  assert.equal(refreshed.body.result.score_rate_bp, 10000);
+  const afterReport = await call(handle, '/api/daily-question');
+  assert.equal(afterReport.body.question.id, candidate.id);
+  assert.equal(afterReport.body.status, 'submitted');
+});
+
+test('daily question uses the configured AI provider for explanation and follow-up', async () => {
+  const prompts = [];
+  const runtime = createLocalRuntime({ llm: async messages => {
+    prompts.push(messages.at(-1).content);
+    return `针对你的作答给出建议（第 ${prompts.length} 次）。`;
+  } });
+  const handle = application(runtime);
+  const daily = await call(handle, '/api/daily-question');
+  const questionId = daily.body.question.id;
+  const submitted = await call(handle, '/api/daily-question/submit', { method: 'POST', key: key(), body: {
+    question_id: questionId, answer_raw: inferAnswer(runtime, questionId),
+  } });
+  assert.equal(submitted.status, 200, JSON.stringify(submitted.body));
+  const explanation = await call(handle, '/api/daily-question/explain', { method: 'POST', key: key(), body: {
+    prompt: '请再提醒我一个容易错的地方。',
+  } });
+  assert.equal(explanation.status, 200, JSON.stringify(explanation.body));
+  assert.equal(explanation.body.ai_messages.at(-1).role, 'assistant');
+  assert.ok(explanation.body.ai_messages.at(-1).content.includes('第 1 次'));
+  const followUp = await call(handle, '/api/daily-question/explain', { method: 'POST', key: key(), body: {
+    prompt: '为什么这个步骤重要？',
+  } });
+  assert.equal(followUp.status, 200, JSON.stringify(followUp.body));
+  assert.equal(followUp.body.ai_messages.filter(message => message.role === 'assistant').length, 2);
+  assert.equal(prompts.length, 2);
+});
+
+test('daily AI explanation shares one in-flight result for a repeated idempotency key', async () => {
+  let calls = 0;
+  let entered;
+  const enteredPromise = new Promise(resolve => { entered = resolve; });
+  let release;
+  const releasePromise = new Promise(resolve => { release = resolve; });
+  const runtime = createLocalRuntime({ llm: async () => {
+    calls += 1;
+    entered();
+    await releasePromise;
+    return '同一请求只生成一次。';
+  } });
+  const handle = application(runtime);
+  const daily = await call(handle, '/api/daily-question');
+  await call(handle, '/api/daily-question/submit', { method: 'POST', key: key(), body: {
+    question_id: daily.body.question.id, answer_raw: inferAnswer(runtime, daily.body.question.id),
+  } });
+  const sameKey = key();
+  const first = call(handle, '/api/daily-question/explain', { method: 'POST', key: sameKey, body: { prompt: '讲解' } });
+  await enteredPromise;
+  const second = call(handle, '/api/daily-question/explain', { method: 'POST', key: sameKey, body: { prompt: '讲解' } });
+  release();
+  const [one, two] = await Promise.all([first, second]);
+  assert.equal(one.status, 200, JSON.stringify(one.body));
+  assert.equal(two.status, 200, JSON.stringify(two.body));
+  assert.equal(calls, 1);
+  assert.deepEqual(one.body.ai_messages, two.body.ai_messages);
+});
+
+test('daily question selection persists after a read-only creation', async () => {
+  const file = path.join(os.tmpdir(), `daily-question-${crypto.randomUUID()}.db`);
+  const runtime = createLocalRuntime();
+  const daily = await call(application(runtime), '/api/daily-question');
+  assert.equal(runtime.dailyQuestionsDirty, true);
+  try {
+    createPersistence(runtime, file).save();
+    const restored = createLocalRuntime();
+    createPersistence(restored, file).load();
+    const record = restored.dailyQuestions.get(`${device}:${daily.body.date}`);
+    assert.equal(record.question_id, daily.body.question.id);
+    assert.ok(record.question_snapshot.answer_latex);
+    assert.equal(record.reason.code, daily.body.reason.code);
+  } finally {
+    if (fs.existsSync(file)) fs.unlinkSync(file);
+  }
 });

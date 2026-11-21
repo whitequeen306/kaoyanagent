@@ -9,6 +9,7 @@ export interface Question {
   sub_items_json?: { label: string; prompt_latex: string }[] | null; score_x2: number;
   difficulty: Difficulty; source: 'real' | 'ai'; answer_latex: string; year?: number; is_fixture?: boolean; score_source?: string | null;
 }
+export type PublicQuestion = Omit<Question, 'answer_latex'>;
 export interface PaperItem { question: Question; score_x2: number; }
 export interface Paper {
   id: string; mode: PaperMode; source_mode: SourceMode; items_json: PaperItem[];
@@ -23,4 +24,12 @@ export interface Attempt {
 export interface GradeResult {
   attempts: Attempt[]; score_x2: number; max_score_x2: number; score_rate_bp: number;
   by_source: Record<string, { score_x2: number; max_score_x2: number }>;
+}
+export interface DailyAiMessage { role: 'user' | 'assistant'; content: string; }
+export interface DailyQuestionState {
+  date: string; status: 'available' | 'submitted';
+  reason: { code: string; text: string };
+  question: PublicQuestion;
+  result: (GradeResult & { diagnosis?: unknown }) | null;
+  ai_messages: DailyAiMessage[];
 }

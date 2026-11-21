@@ -8,6 +8,7 @@ import { advancePaperJob, advanceVariantJob, createPaperJob, createVariantJob, d
 import { publicAiSettings, saveAiSettings, settingsFor } from './ai-settings.mjs';
 import { getAgentState, saveProfile, savePreferences, saveAgentSummary, clearAgentSummary, updateStudyPlan } from './agent-store.mjs';
 import { advanceAgentTask, confirmAgentTask, createAgentTask, publicAgentTask } from './agent.mjs';
+import { getDailyQuestion, ensureDailyPaper, generateDailyAiReply } from './daily-question.mjs';
 
 function json(value, status = 200) { return Response.json(value, { status }); }
 function paperView(paper) { const { device_id, ...rest } = paper; return rest; }
@@ -43,6 +44,31 @@ function idempotent(runtime, request, deviceId, action, input, work) {
   runtime.idempotency.set(scoped, { input, response });
   return response;
 }
+async function asyncIdempotent(runtime, request, deviceId, action, input, work) {
+  const key = request.headers.get('idempotency-key');
+  if (!key || !/^[a-zA-Z0-9_-]{12,128}$/.test(key)) fail('invalid_input');
+  const scoped = `${deviceId}:${action}:${key}`;
+  const previous = runtime.idempotency.get(scoped);
+  if (previous) {
+    if (JSON.stringify(previous.input) !== JSON.stringify(input)) fail('idempotency_conflict', 409);
+    return previous.response;
+  }
+  const inflight = runtime.idempotencyInflight ||= new Map();
+  const pending = inflight.get(scoped);
+  if (pending) {
+    if (JSON.stringify(pending.input) !== JSON.stringify(input)) fail('idempotency_conflict', 409);
+    return pending.promise;
+  }
+  const promise = Promise.resolve().then(work);
+  inflight.set(scoped, { input, promise });
+  try {
+    const response = await promise;
+    runtime.idempotency.set(scoped, { input, response });
+    return response;
+  } finally {
+    if (inflight.get(scoped)?.promise === promise) inflight.delete(scoped);
+  }
+}
 function requireSession(runtime, request, deviceId) {
   const token = request.headers.get('x-device-token');
   const session = runtime.deviceSessions.get(deviceId);
@@ -60,10 +86,22 @@ function paperResult(paper, runtime) {
   const attempts = runtime.attempts.filter(attempt => attempt.paper_instance_id === paper.id);
   return {
     attempts: attempts.map(attempt => {
-      const question = runtime.questions.find(q => q.id === attempt.question_id);
+      const question = runtime.questions.find(q => q.id === attempt.question_id)
+        || paper.items_json.find(item => item.question_id === attempt.question_id)?.question;
       return { ...publicAttempt(attempt), ...(question ? reviewQuestion(question) : {}) };
     }),
     ...submissionSummary(paper, attempts), diagnosis: null,
+  };
+}
+function dailyQuestionView(runtime, deviceId) {
+  const daily = getDailyQuestion(runtime, deviceId);
+  return {
+    date: daily.record.date,
+    status: daily.paper?.status === 'submitted' ? 'submitted' : 'available',
+    reason: daily.record.reason,
+    question: publicQuestion(daily.question),
+    result: daily.paper?.status === 'submitted' ? paperResult(daily.paper, runtime) : null,
+    ai_messages: daily.record.ai_messages || [],
   };
 }
 export function application(runtime) {
@@ -90,6 +128,40 @@ export function application(runtime) {
     }
     if (path === '/api/ai-settings' && request.method === 'POST') {
       return json(await saveAiSettings(runtime, deviceId, input, settingsFor(runtime, deviceId)));
+    }
+    if (path === '/api/daily-question' && request.method === 'GET') {
+      return json(dailyQuestionView(runtime, deviceId));
+    }
+    if (path === '/api/daily-question/submit' && request.method === 'POST') {
+      if (typeof input.question_id !== 'string' || typeof input.answer_raw !== 'string') fail('invalid_input');
+      if (input.confirmed_latex !== undefined && input.confirmed_latex !== null && typeof input.confirmed_latex !== 'string') fail('invalid_input');
+      if (input.duration_sec !== undefined && input.duration_sec !== null
+        && (!Number.isInteger(input.duration_sec) || input.duration_sec < 0)) fail('invalid_input');
+      if (input.answer_raw.length > 20000) fail('payload_too_large', 413);
+      const daily = getDailyQuestion(runtime, deviceId);
+      if (input.question_id !== daily.question.id) fail('state_conflict', 409);
+      const response = idempotent(runtime, request, deviceId, `daily-submit:${daily.record.date}`, input, () => {
+        const current = getDailyQuestion(runtime, deviceId);
+        const paper = ensureDailyPaper(runtime, current);
+        if (paper.status !== 'submitted') {
+          gradeSubmission(paper, {
+            device_id: deviceId,
+            answers: [{ question_id: input.question_id, answer_raw: input.answer_raw, confirmed_latex: input.confirmed_latex ?? null, duration_sec: input.duration_sec ?? null }],
+          }, runtime);
+        }
+        return dailyQuestionView(runtime, deviceId);
+      });
+      return json(response);
+    }
+    if (path === '/api/daily-question/explain' && request.method === 'POST') {
+      if (input.prompt !== undefined && typeof input.prompt !== 'string') fail('invalid_input');
+      if (String(input.prompt || '').length > 1000) fail('payload_too_large', 413);
+      const daily = getDailyQuestion(runtime, deviceId);
+      const response = await asyncIdempotent(runtime, request, deviceId, `daily-explain:${daily.record.date}`, input, async () => {
+        await generateDailyAiReply(runtime, deviceId, input.prompt || '');
+        return dailyQuestionView(runtime, deviceId);
+      });
+      return json(response);
     }
     if (path === '/api/agent/state' && request.method === 'GET') {
       const state = getAgentState(runtime, deviceId);
