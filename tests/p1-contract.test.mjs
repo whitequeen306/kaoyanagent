@@ -5,6 +5,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { application, errorResponse } from '../functions/routes.mjs';
 import { createLocalRuntime } from '../functions/runtime.mjs';
+import { providerFor } from '../functions/ai-settings.mjs';
 import { realQuestions } from '../functions/real-data.mjs';
 import { composePaper } from '../functions/compose.mjs';
 import { createPaperJob } from '../functions/generate.mjs';
@@ -1082,6 +1083,77 @@ test('daily selection skips a recent mistake until it is due, then prefers it ov
   assert.equal(due.question.id, dailyChoice.id);
   assert.equal(due.reason.code, 'due_review');
   assert.equal(due.status, 'available');
+});
+
+test('server default grades anonymous image answers and keeps saved credentials scoped', async t => {
+  const now = Date.parse('2026-11-22T10:00:00Z');
+  t.mock.timers.enable({ apis: ['Date'], now });
+  const env = {
+    KAOYAN_LLM_BASE_URL: 'https://default.example.com/v1',
+    KAOYAN_LLM_API_KEY: 'sk-shared-example',
+    KAOYAN_LLM_MODEL: 'shared-test-model',
+  };
+  const previous = Object.fromEntries(Object.keys(env).map(name => [name, process.env[name]]));
+  Object.assign(process.env, env);
+  t.after(() => {
+    for (const [name, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  });
+  const calls = [];
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    const { model, messages, max_tokens } = JSON.parse(options.body);
+    const content = messages.at(-1).content;
+    calls.push({ url, key: options.headers.Authorization, model, content });
+    if (Array.isArray(content) && max_tokens < 2000) {
+      return Response.json({ choices: [{ finish_reason: 'length', message: { content: null, reasoning_content: '检查图片中的作答。' } }] });
+    }
+    const reply = Array.isArray(content)
+      ? JSON.stringify({ correct: true, retryable: false, feedback: '图片中的选项 D 正确。' })
+      : '这是测验回复。';
+    return Response.json({ choices: [{ message: { content: reply } }] });
+  });
+  const { runtime, handle, submit } = dailyFixture(dailyChoice);
+  const day = new Date().toISOString().slice(0, 10);
+  const previousUsage = [[`default-model:${device}:${day}`, 20], [`default-model::${day}`, 200]];
+  runtime.usage = new Map(previousUsage);
+  const settings = await call(handle, '/api/ai-settings');
+  assert.deepEqual(settings.body, {
+    configured: true, base_url: '', model: env.KAOYAN_LLM_MODEL, has_key: false, key_hint: '',
+  });
+  const overrides = { base_url: 'https://custom.example.com/v1', model: 'custom-test-model' };
+  const missingKey = await call(handle, '/api/ai-settings', { method: 'POST', key: key(), body: overrides });
+  assert.equal(missingKey.status, 400);
+  assert.equal(calls.length, 0);
+  assert.equal(runtime.aiSettings.size, 0);
+
+  const submitted = await submit({ answer_image: choiceDImage });
+  assert.equal(submitted.status, 200);
+  assert.equal(submitted.body.result.correct, true);
+  assert.equal(submitted.body.result.answer_kind, 'image');
+  assert.equal(calls[0].url, `${env.KAOYAN_LLM_BASE_URL}/chat/completions`);
+  assert.equal(calls[0].key, `Bearer ${env.KAOYAN_LLM_API_KEY}`);
+  assert.equal(calls[0].model, env.KAOYAN_LLM_MODEL);
+  assert.deepEqual(calls[0].content[1], { type: 'image_url', image_url: { url: choiceDImage.data_url } });
+
+  const explain = () => call(handle, '/api/daily-question/explain', { method: 'POST', key: key(), body: { date: submitted.body.date } });
+  assert.equal((await explain()).status, 200);
+  const otherProvider = providerFor(runtime, 'test-device-0002');
+  assert.equal(await otherProvider([{ role: 'user', content: '测试' }]), '这是测验回复。');
+  assert.equal(calls.length, 3);
+  assert.deepEqual([...runtime.usage], previousUsage);
+
+  const saved = await call(handle, '/api/ai-settings', { method: 'POST', key: key(), body: { ...overrides, api_key: 'sk-custom-example' } });
+  assert.equal(saved.status, 200);
+  assert.equal((await call(handle, '/api/ai-settings')).body.model, overrides.model);
+  assert.equal((await explain()).status, 200);
+  for (const request of calls.slice(3)) {
+    assert.equal(request.url, `${overrides.base_url}/chat/completions`);
+    assert.equal(request.key, 'Bearer sk-custom-example');
+    assert.equal(request.model, overrides.model);
+  }
+  assert.equal(calls.length, 5);
 });
 
 test('daily question uses the configured AI provider for explanation and follow-up', async () => {

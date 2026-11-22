@@ -68,7 +68,9 @@ export function createPersistence(runtime, file) {
           .map(row => [`${row.device_id}:${row.date}`, parse(row.payload, null) || {}]));
         const meta = new Map(db.prepare('SELECT key, value FROM meta').all().map(row => [row.key, row.value]));
         if (meta.get('version') !== String(VERSION)) return;
-        if (meta.get('saved_date') === today()) {
+        const savedDate = meta.get('saved_date');
+        if (savedDate === today()) {
+          runtime.usageDate = savedDate;
           runtime.usage = new Map(db.prepare('SELECT key, value FROM usage').all()
             .filter(row => String(row.key).endsWith(today()))
             .map(row => [row.key, Number(row.value) || 0]));
@@ -128,7 +130,7 @@ export function createPersistence(runtime, file) {
           const insertMeta = db.prepare('INSERT INTO meta (key, value) VALUES (?, ?)');
           insertMeta.run('version', String(VERSION));
           insertMeta.run('saved_at', new Date().toISOString());
-          insertMeta.run('saved_date', today());
+          insertMeta.run('saved_date', runtime.usageDate);
           insertMeta.run('generated_today', String(runtime.generatedToday || 0));
           insertMeta.run('compose_stats', JSON.stringify(runtime.composeStats || { success: 0, failure: 0 }));
           if (runtime.dataset) insertMeta.run('dataset', String(runtime.dataset));

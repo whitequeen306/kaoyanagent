@@ -1,21 +1,15 @@
 // Server-side OpenAI-compatible client. Keys never reach the browser.
 import { AppError } from './model.mjs';
 
-function readEnvConfig() {
+export function defaultLlmConfig() {
   const read = name => {
     if (typeof globalThis.Deno !== 'undefined') return globalThis.Deno.env.get(name);
     return globalThis.process?.env?.[name];
   };
-  return {
-    baseUrl: read('KAOYAN_LLM_BASE_URL'),
-    apiKey: read('KAOYAN_LLM_API_KEY'),
-    model: read('KAOYAN_LLM_MODEL'),
-  };
-}
-
-export function llmConfigured() {
-  const config = readEnvConfig();
-  return Boolean(config.baseUrl && config.apiKey && config.model);
+  const baseUrl = read('KAOYAN_LLM_BASE_URL');
+  const apiKey = read('KAOYAN_LLM_API_KEY');
+  const model = read('KAOYAN_LLM_MODEL');
+  return baseUrl && apiKey && model ? { baseUrl, apiKey, model } : null;
 }
 
 export async function chat(messages, { maxTokens = 8000, temperature = 0.3, timeoutMs = 180000, provider } = {}) {
@@ -25,8 +19,8 @@ export async function chat(messages, { maxTokens = 8000, temperature = 0.3, time
         apiKey: provider.api_key || provider.apiKey,
         model: provider.model,
       }
-    : readEnvConfig();
-  if (!config.baseUrl || !config.apiKey || !config.model) throw new AppError('llm_not_configured', 503);
+    : defaultLlmConfig();
+  if (!config?.baseUrl || !config.apiKey || !config.model) throw new AppError('llm_not_configured', 503);
   const body = JSON.stringify({
     model: config.model,
     messages,

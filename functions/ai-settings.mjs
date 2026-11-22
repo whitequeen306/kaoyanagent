@@ -1,12 +1,16 @@
 import { AppError, fail, nowIso } from './model.mjs';
-import { chat } from './llm.mjs';
+import { chat, defaultLlmConfig } from './llm.mjs';
+import { checkQuota } from './runtime.mjs';
 
 export function settingsFor(runtime, deviceId) {
   return runtime.aiSettings?.get(deviceId) || null;
 }
 
 export function publicAiSettings(settings) {
-  if (!settings) return { configured: false, base_url: '', model: '', has_key: false, key_hint: '' };
+  if (!settings) {
+    const defaultConfig = defaultLlmConfig();
+    return { configured: Boolean(defaultConfig), base_url: '', model: defaultConfig?.model || '', has_key: false, key_hint: '' };
+  }
   return {
     configured: true,
     base_url: settings.base_url,
@@ -16,11 +20,16 @@ export function publicAiSettings(settings) {
   };
 }
 
-export function providerFor(runtime, deviceId) {
-  if (runtime.llm) return runtime.llm;
+export function providerFor(runtime, deviceId, { countPracticeCall = false } = {}) {
+  const injected = runtime.llm;
   const settings = settingsFor(runtime, deviceId);
-  if (!settings) return null;
-  return (messages, options) => chat(messages, { ...options, provider: settings });
+  const defaultConfig = injected || settings ? null : defaultLlmConfig();
+  if (!injected && !settings && !defaultConfig) return null;
+  return async (messages, options) => {
+    if (!defaultConfig && countPracticeCall && !checkQuota(runtime, deviceId)) fail('quota_exceeded', 429);
+    if (injected) return injected(messages, options);
+    return chat(messages, { ...options, provider: settings || defaultConfig });
+  };
 }
 
 export async function testProvider(settings) {

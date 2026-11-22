@@ -1,5 +1,7 @@
 import { agentToolSchemas } from './agent-tools.mjs';
 import { getAgentState } from './agent-store.mjs';
+import { settingsFor } from './ai-settings.mjs';
+import { defaultLlmConfig } from './llm.mjs';
 
 export const MODEL_PROFILES = {
   'gpt-4o-mini': { contextWindow: 128000, maxOutput: 16384 },
@@ -25,8 +27,8 @@ export function resolveModelProfile(model) {
 }
 
 export function contextBudget(runtime, deviceId) {
-  const settings = runtime.aiSettings.get(deviceId);
-  const profile = resolveModelProfile(settings?.model);
+  const model = settingsFor(runtime, deviceId)?.model || defaultLlmConfig()?.model;
+  const profile = resolveModelProfile(model);
   const safeOutput = Math.min(profile.maxOutput, Math.floor(profile.contextWindow * 0.25));
   const inputBudget = profile.contextWindow - safeOutput;
   const fixed = estimateTokens(agentToolSchemas) + 3500;

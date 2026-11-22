@@ -67,7 +67,7 @@ docker ps --filter name=kaoyan-postgres
 ```dotenv
 LOCAL_DATABASE_URL=postgres://kaoyan:kaoyan_dev_2026@127.0.0.1:5433/kaoyan
 
-# 仅数据管线脚本使用；应用内 AI 不读取这三项
+# 可选的服务端默认模型，数据管线也使用这三项
 KAOYAN_LLM_BASE_URL=http://127.0.0.1:3425/v1
 KAOYAN_LLM_API_KEY=your-key
 KAOYAN_LLM_MODEL=your-model
@@ -77,7 +77,7 @@ KAOYAN_LLM_MODEL=your-model
 
 - `LOCAL_DATABASE_URL` 存在时使用 PostgreSQL，不存在时回退到 `data/kaoyan.db`（SQLite）。
 - 数据库表由后端启动时自动创建，无需手动执行 SQL。
-- 应用内的 AI 出卷使用右上角「模型设置」中按设备保存的 provider，不使用 `KAOYAN_LLM_*`。
+- 同时设置三项 `KAOYAN_LLM_*` 后，未自配模型的访客可直接使用 AI 功能。右上角「模型设置」中保存的设备配置优先。线上部署时由后端服务注入这三项。
 
 ### 4. 启动后端
 
@@ -111,7 +111,9 @@ http://127.0.0.1:5173/
 
 ### 6. 配置模型
 
-进入应用右上角「模型设置」，填写：
+服务端设置默认模型后，访客可直接使用。
+
+自配模型时，在应用右上角「模型设置」填写：
 
 - Base URL：OpenAI 兼容地址，例如 `https://api.openai.com/v1`
 - API Key

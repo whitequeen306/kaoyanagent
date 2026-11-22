@@ -65,7 +65,9 @@ export function createPersistence(runtime, connectionString) {
       runtime.dailyQuestions = new Map(dailyRecords.map(record => [`${record.device_id}:${record.date}`, record]));
       const meta = new Map((await pool.query('SELECT key, value FROM meta')).rows.map(row => [row.key, row.value]));
       if (meta.get('version') !== String(VERSION)) return;
-      if (meta.get('saved_date') === today()) {
+      const savedDate = meta.get('saved_date');
+      if (savedDate === today()) {
+        runtime.usageDate = savedDate;
         runtime.usage = new Map((await pool.query('SELECT key, value FROM usage')).rows
           .filter(row => String(row.key).endsWith(today()))
           .map(row => [row.key, Number(row.value) || 0]));
@@ -125,7 +127,7 @@ export function createPersistence(runtime, connectionString) {
       const meta = {
         version: String(VERSION),
         saved_at: new Date().toISOString(),
-        saved_date: today(),
+        saved_date: runtime.usageDate,
         generated_today: String(runtime.generatedToday || 0),
         compose_stats: JSON.stringify(runtime.composeStats || { success: 0, failure: 0 }),
         ...(runtime.dataset ? { dataset: String(runtime.dataset) } : {}),

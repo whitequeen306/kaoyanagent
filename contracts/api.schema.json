@@ -39,6 +39,7 @@
       "name": "get_ai_settings",
       "method": "GET",
       "path": "/api/ai-settings",
+      "description": "Shows the effective model. Device settings take priority. For the server default, base_url and key_hint are empty and has_key is false.",
       "responseProperties": ["configured", "base_url", "model", "has_key", "key_hint"]
     },
     {
@@ -74,7 +75,7 @@
       "name": "submit_daily_question",
       "method": "POST",
       "path": "/api/daily-question/submit",
-      "description": "Submit a nonblank answer_raw or an answer_image. Choices and literal fill-in matches are checked directly. Other mathematical text and images use the device's configured model. Returns the daily question view. A final wrong answer enters the device's review schedule once.",
+      "description": "Submit a nonblank answer_raw or an answer_image. Choices and literal fill-in matches are checked directly. Other mathematical text and images use the device model or the server default. Returns the daily question view. A final wrong answer enters the device's review schedule once.",
       "requestRequired": ["date", "question_id"],
       "requestProperties": {
         "date": {"type": "string", "format": "date", "description": "Shanghai date shown on the daily question; stale pages receive 409."},
