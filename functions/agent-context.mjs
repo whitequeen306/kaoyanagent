@@ -57,7 +57,7 @@ export function buildAgentContext(runtime, deviceId, conversation, currentInput,
   const preferencesText = JSON.stringify(state.preferences);
   const summaryText = state.agent_summary || '（暂无 Agent 推断）';
   const plans = state.plans.filter(plan => plan.status === 'active').map(plan => ({ id: plan.id, title: plan.title, items: plan.items }));
-  const system = `你是研数的学习助手 Agent。你的任务是理解考研数学二用户的情况，调用白名单工具，给出可执行的学习结果。
+  const system = `你是题脉的学习助手 Agent。你的任务是理解考研数学二用户的情况，调用白名单工具，给出可执行的学习结果。
 规则：
 1. 用户填写的档案是事实，不得擅自修改；Agent Summary 是推断，可能过时，必要时用工具验证。
 2. 用户偏好是偏好，不是事实。

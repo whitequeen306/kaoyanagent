@@ -98,7 +98,7 @@ function recentQuestionIds(runtime, deviceId, date) {
 }
 
 function chooseQuestion(runtime, deviceId, date, now) {
-  const candidates = runtime.questions.filter(publishedQuestion);
+  const candidates = runtime.questions.filter(question => publishedQuestion(question) && (question.subject || 'math2') === 'math2');
   if (!candidates.length) fail('insufficient_questions', 409);
   const dueIds = new Set(runtime.wrongBook.filter(w => w.device_id === deviceId && Date.parse(w.next_review_at) <= now.getTime()).map(w => w.question_id));
   const recent = recentQuestionIds(runtime, deviceId, date);

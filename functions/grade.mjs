@@ -2,6 +2,20 @@ import { fail, uuid, nowIso, normalizeText } from './model.mjs';
 import { recordReviewOutcome } from './review.mjs';
 
 export function publicQuestion(question) {
+  if (question.subject === 'cs408') {
+    return {
+      id: question.id, seq_label: question.seq_label, qtype: question.qtype,
+      section: question.section, subject: 'cs408', year: question.year || null,
+      number: question.number, title: question.title || null,
+      question_html: question.question_html || '', question_text: question.question_text || '',
+      options: question.options || [], figures: question.figures || [],
+      score_x2: question.score_x2, score_source: question.score_source || null,
+      difficulty: question.difficulty, source: question.source || 'real', is_fixture: false,
+      has_explanation: Boolean(question.has_explanation),
+      ai_kind: question.ai_kind || (question.generator_meta_json?.variant_of ? 'variant' : 'practice'),
+      knowledge: question.knowledge || [],
+    };
+  }
   return {
     id: question.id, seq_label: question.seq_label, qtype: question.qtype,
     section: question.section, stem_latex: question.stem_latex,
@@ -10,10 +24,21 @@ export function publicQuestion(question) {
     })) || null,
     score_x2: question.score_x2, difficulty: question.difficulty, source: question.source,
     year: question.year || null, is_fixture: Boolean(question.is_fixture),
+    has_figure: Boolean(question.has_figure), figure_asset_id: question.figure_asset_id || null,
+    figure_assets: question.figure_assets || [],
     score_source: question.generator_meta_json?.score_source || null,
   };
 }
 export function reviewQuestion(question) {
+  if (question.subject === 'cs408') {
+    return {
+      correct_answer: question.answer_latex || '',
+      explanation: question.answer_text || question.explanation || '',
+      explanation_html: question.answer_html || '',
+      solution_steps: [],
+      has_explanation: Boolean(question.has_explanation),
+    };
+  }
   return {
     correct_answer: question.answer_latex,
     explanation: question.generator_meta_json?.approach_raw || question.generator_meta_json?.exam_point_raw || '',

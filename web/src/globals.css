@@ -136,33 +136,6 @@ body {
   font-family: var(--site-font);
 }
 
-/* 设计参数使用工程原有样式管理，工作台只临时覆盖变量。 */
-:root {
-  --site-bg: #ffffff;
-  --site-fg: #171717;
-  --site-accent: #171717;
-  --site-on-accent: #fafafa;
-  --site-surface: #f5f5f5;
-  --site-muted: #737373;
-  --site-border: #e5e5e5;
-  --site-font: Arial, Helvetica, sans-serif;
-  --site-radius: 10px;
-  --site-space: 1;
-  --site-type: 1;
-  --site-motion: 1;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --site-bg: #0a0a0a;
-    --site-fg: #ededed;
-    --site-accent: #ededed;
-    --site-on-accent: #171717;
-    --site-surface: #262626;
-    --site-muted: #a1a1a1;
-    --site-border: #ffffff1a;
-  }
-}
-
 :root {
   --background: var(--site-bg);
   --foreground: var(--site-fg);

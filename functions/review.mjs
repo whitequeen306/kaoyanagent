@@ -22,19 +22,21 @@ export function recordReviewOutcome(runtime, deviceId, questionId, correct, { at
   if (attemptId) entry.attempt_history_json = [...(entry.attempt_history_json || []), attemptId];
 }
 
-export function listWrongBook(deviceId, runtime) {
+export function listWrongBook(deviceId, runtime, subject = 'math2') {
   return runtime.wrongBook.filter(w => w.device_id === deviceId).map(w => {
     const daily = w.daily_date ? runtime.dailyQuestions.get(`${deviceId}:${w.daily_date}`) : null;
+    const question = daily?.question_snapshot || runtime.questions.find(q => q.id === w.question_id);
+    if ((question?.subject || 'math2') !== subject) return null;
     return {
       ...w,
-      question: daily?.question_snapshot || runtime.questions.find(q => q.id === w.question_id),
+      question,
       attempt: w.attempt_id ? runtime.attempts.find(a => a.id === w.attempt_id) : null,
       daily_answer: daily?.judgment ? {
         date: daily.date, correct: daily.judgment.correct, answer_kind: daily.judgment.answer_kind,
         answer_raw: daily.answer_raw || null, feedback: daily.judgment.feedback,
       } : null,
     };
-  });
+  }).filter(Boolean);
 }
 export function todayReview(deviceId, runtime) {
   const now = nowIso();

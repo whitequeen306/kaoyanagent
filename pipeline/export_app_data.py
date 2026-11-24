@@ -33,11 +33,15 @@ def main() -> None:
                 if item.get("summary") and item.get("steps"):
                     explanations[item["content_hash"]] = item
     selected = rows
+    figure_path = OUTPUT / "figure-assets.json"
+    figures = json.loads(figure_path.read_text(encoding="utf-8")) if figure_path.exists() else {}
     questions = []
     for row in selected:
         enriched = explanations.get(row["content_hash"])
         explanation = enriched["summary"] if enriched else row["approach_raw"]
         steps = enriched["steps"] if enriched else [step["desc"] for step in row["rubric_draft"]["steps"]]
+        number = row["seq_label"].rsplit("-", 1)[-1]
+        figure = figures.get(f"{row['year']}:{number}")
         questions.append({
             "id": row["id"], "paper_id": None,
             "seq_label": row["seq_label"].rsplit("-", 1)[-1], "year": row["year"],
@@ -49,7 +53,9 @@ def main() -> None:
             "solution_latex": None, "score_x2": row["score_x2"],
             "difficulty": row["difficulty"], "difficulty_obs": None,
             "difficulty_source": row["difficulty_source"],
-            "est_minutes": None, "has_figure": False, "figure_asset_id": None,
+            "est_minutes": None, "has_figure": bool(figure),
+            "figure_asset_id": figure["id"] if figure else None,
+            "figure_assets": [figure] if figure else [],
             "source": "real",
             "generator_meta_json": {
                 "score_source": row["score_source"],

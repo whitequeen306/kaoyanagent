@@ -144,6 +144,26 @@
         "null"
       ]
     },
+    "figure_assets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "url",
+          "width",
+          "height"
+        ],
+        "properties": {
+          "id": { "type": "string" },
+          "url": { "type": "string" },
+          "width": { "type": "integer", "minimum": 1 },
+          "height": { "type": "integer", "minimum": 1 },
+          "alt": { "type": "string" }
+        }
+      }
+    },
     "source": {
       "enum": [
         "real",

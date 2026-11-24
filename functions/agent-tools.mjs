@@ -47,11 +47,11 @@ function ownQuestion(runtime, deviceId, questionId) {
   const wrong = runtime.wrongBook.find(item => item.device_id === deviceId && item.question_id === questionId);
   const inPaper = runtime.papers.some(paper => paper.device_id === deviceId && paper.items_json.some(item => item.question_id === questionId));
   const question = runtime.questions.find(item => item.id === questionId);
-  if ((!wrong && !inPaper) || !question) fail('not_found', 404);
+  if ((!wrong && !inPaper) || !question || (question.subject || 'math2') !== 'math2') fail('not_found', 404);
   return question;
 }
 function ownPaper(runtime, deviceId, paperId) {
-  const paper = runtime.papers.find(item => item.id === paperId && item.device_id === deviceId);
+  const paper = runtime.papers.find(item => item.id === paperId && item.device_id === deviceId && (item.subject || 'math2') === 'math2');
   if (!paper) fail('not_found', 404);
   return paper;
 }
@@ -59,7 +59,7 @@ function wrongRows(runtime, deviceId) {
   return runtime.wrongBook.filter(item => item.device_id === deviceId).map(wrong => ({
     wrong, question: runtime.questions.find(q => q.id === wrong.question_id),
     stats: variantMastery(wrong, deviceId, runtime),
-  })).filter(row => row.question);
+  })).filter(row => row.question && (row.question.subject || 'math2') === 'math2');
 }
 function questionLabel(question) {
   if (question.source === 'ai' || !question.year) return `AI 原创 · ${question.seq_label || '练习'}`;
@@ -95,6 +95,7 @@ function diagnose(runtime, deviceId, rangeDays) {
   const byCode = new Map();
   for (const attempt of attempts) {
     const question = runtime.questions.find(q => q.id === attempt.question_id);
+    if (!question || (question.subject || 'math2') !== 'math2') continue;
     const code = question?.knowledge?.[0]?.code;
     if (!code) continue;
     const node = runtime.knowledge.find(item => item.code === code);
@@ -144,7 +145,7 @@ export async function executeAgentTool(runtime, deviceId, name, args = {}, conte
     case 'get_question_detail': data = questionDetail(ownQuestion(runtime, deviceId, args.question_id)); break;
     case 'list_papers': {
       const limit = args.limit || 10;
-      data = runtime.papers.filter(paper => paper.device_id === deviceId && (!args.status || paper.status === args.status))
+      data = runtime.papers.filter(paper => paper.device_id === deviceId && (paper.subject || 'math2') === 'math2' && (!args.status || paper.status === args.status))
         .slice().sort((a, b) => String(b.created_at).localeCompare(String(a.created_at))).slice(0, limit)
         .map(paper => ({ id: paper.id, title: paper.title || null, status: paper.status, created_at: paper.created_at, questions: paper.items_json.length, total_score_x2: paper.total_score_x2, source_mode: paper.source_mode, mode: paper.mode }));
       break;

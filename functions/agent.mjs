@@ -84,7 +84,7 @@ function contextToolData(name, data) {
 async function decide(runtime, deviceId, context) {
   const llm = providerFor(runtime, deviceId);
   if (!llm) throw new AppError('llm_not_configured', 409);
-  const messages = [{ role: 'system', content: '你是研数学习助手的决策器。只输出 JSON。' }, { role: 'user', content: decisionPrompt(context) }];
+  const messages = [{ role: 'system', content: '你是题脉学习助手的决策器。只输出 JSON。' }, { role: 'user', content: decisionPrompt(context) }];
   const raw = await llm(messages, { maxTokens: context.budget.safe_output, temperature: 0.2 });
   try {
     return parseDecision(raw);

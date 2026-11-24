@@ -1,7 +1,5 @@
 [
-  {"year": 2008, "number": 2, "content_hash": "d6e8fa8262b5e832e83ea64671e2bdabb1704d05f9f4fe5ddebb70f129eec54f", "reason": "四个选项依赖图中未在文字中定义的 A、B、C、D 点。"},
-  {"year": 2009, "number": 6, "content_hash": "ef93180255737f165476b915d5a7c792e06dbb53ed138de19cf284731d686d24", "reason": "函数图像和四个备选图像均缺失。"},
-  {"year": 2015, "number": 4, "content_hash": "867e44f8a1ed1834084192c6c94717faac0060292b2aa4648062d2f2e0283e7d", "reason": "判断拐点所需的二阶导函数图像缺失。"},
-  {"year": 2016, "number": 4, "content_hash": "0ffdfcae57fe435ca506f33a2898b7ada9216b54cdd580a972cae779ebe943d4", "reason": "导函数图形仅标注为如原卷所示。"},
-  {"year": 2017, "number": 6, "content_hash": "e800c052d75155cd04daecd9f16a9ed7f68b074380181b858524526d0ada4eb7", "reason": "缺少赛跑速度图的时间坐标和曲线相对位置。"}
+  {"year": 2009, "number": 6, "content_hash": "ef93180255737f165476b915d5a7c792e06dbb53ed138de19cf284731d686d24", "reason": "源 PDF 缺少函数图像和四个备选图像，无法从原卷恢复。"},
+  {"year": 2011, "number": 20, "content_hash": "af0b7b09543f1a88fe4cdfdefd4cbcf21045cae75901967078162b5914f64a7e", "reason": "源 PDF 缺少题干所称的曲线图示；曲线方程虽完整，但先搁置以避免歧义。"},
+  {"year": 2017, "number": 6, "content_hash": "e800c052d75155cd04daecd9f16a9ed7f68b074380181b858524526d0ada4eb7", "reason": "源 PDF 缺少赛跑速度图的时间坐标和曲线。"}
 ]

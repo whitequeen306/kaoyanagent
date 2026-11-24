@@ -1,4 +1,5 @@
 import { MathText } from './MathText';
+import { QuestionFigures } from './QuestionFigures';
 import type { Attempt, Paper } from '../types';
 
 const qtypeLabel = (value: string) => ({ single_choice: '选择题', fill_blank: '填空题', free_response: '解答题' }[value] || value);
@@ -9,7 +10,7 @@ export function PdfPaper({ paper, includeAnswers }: { paper: Paper; includeAnswe
   const title = paper.title || '数学二练习卷';
   const created = paper.created_at ? new Date(paper.created_at).toLocaleString('zh-CN') : '';
   return <div className="pdf-paper" id="pdf-export-paper">
-    <header className="pdf-header"><span>研数 · 考研数学二助手</span><span>{created}</span></header>
+    <header className="pdf-header"><span>题脉 · 考研数学二助手</span><span>{created}</span></header>
     <h1 className="pdf-title">{title}</h1>
     <div className="pdf-sub">{paper.items_json.length} 题 · 卷面 {formatScore(paper.total_score_x2)} 分 · {paper.mode === 'exam' ? '整卷模考' : '专项突破'}{includeAnswers ? ' · 含作答与解析' : ' · 空白卷'}</div>
     <div className="pdf-rule" />
@@ -26,6 +27,7 @@ export function PdfPaper({ paper, includeAnswers }: { paper: Paper; includeAnswe
           {includeAnswers && attempt ? <span className={attempt.score_x2 === attempt.max_score_x2 ? 'pdf-tag-right' : 'pdf-tag-wrong'}>{attempt.score_x2 === attempt.max_score_x2 ? '回答正确' : '回答错误'}</span> : null}
         </div>
         <div className="pdf-stem"><MathText text={question.stem_latex} /></div>
+        <QuestionFigures assets={question.figure_assets} />
         {question.sub_items_json?.map(sub => <div className="pdf-subitem" key={sub.label}><strong>{sub.label}</strong><MathText text={sub.prompt_latex} /></div>)}
         {question.qtype === 'single_choice' && question.options_json?.length ? <div className="pdf-options">{question.options_json.map(option => {
           const isCorrect = includeAnswers && correctLabel === option.label;

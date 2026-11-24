@@ -9,6 +9,7 @@ import { providerFor } from '../functions/ai-settings.mjs';
 import { realQuestions } from '../functions/real-data.mjs';
 import { composePaper } from '../functions/compose.mjs';
 import { createPaperJob } from '../functions/generate.mjs';
+import { syncRepairForPaper } from '../functions/repair.mjs';
 import { createPersistence } from '../dev/persist.mjs';
 import { buildAgentContext, contextBudget, resolveModelProfile } from '../functions/agent-context.mjs';
 import { DatabaseSync } from 'node:sqlite';
@@ -44,6 +45,370 @@ test('health and knowledge are available', async () => {
   assert.equal((await call(handle, '/api/health')).body.ok, true);
   assert.ok((await call(handle, '/api/knowledge')).body.items.length >= 8);
 });
+test('published figure questions carry assets and unrecoverable ones stay held', () => {
+  const runtime = createLocalRuntime();
+  const figurePattern = /如图|图所示|图示|图形如原卷|如图所示|图中/;
+  const figureQuestions = runtime.questions.filter(question => question.source === 'real' && (question.subject || 'math2') === 'math2' && figurePattern.test(question.stem_latex));
+  const published = figureQuestions.filter(question => question.status === 'published');
+  assert.equal(published.length, 8);
+  for (const question of published) {
+    assert.equal(question.has_figure, true, `${question.year}-${question.seq_label}`);
+    assert.equal(question.figure_assets?.[0]?.url, `/figures/figure-${question.year}-${question.seq_label}.png`);
+    assert.ok(fs.existsSync(path.join(process.cwd(), 'web', 'public', question.figure_assets[0].url.slice(1))), question.figure_assets[0].url);
+  }
+  assert.deepEqual(
+    figureQuestions.filter(question => question.status === 'pending_review').map(question => `${question.year}-${question.seq_label}`),
+    ['2009-6', '2011-20', '2017-6'],
+  );
+});
+test('math exam years create a real full-year paper without touching 408', async () => {
+  const runtime = createLocalRuntime();
+  const handle = application(runtime);
+  const years = await call(handle, '/api/math/exam-years');
+  assert.equal(years.status, 200);
+  assert.ok(years.body.items.length >= 20);
+  assert.equal(years.body.items[0].year, 2026);
+  assert.ok(years.body.items.every(item => item.total_score_x2 === 300));
+  const created = await call(handle, '/api/math/exam-papers', { method: 'POST', key: key(), body: { year: 2009 } });
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+  assert.equal(created.body.origin, 'math_exam');
+  assert.equal(created.body.subject, 'math2');
+  assert.equal(created.body.items_json.length, 23);
+  assert.equal(created.body.total_score_x2, 300);
+  const history = await call(handle, '/api/papers');
+  assert.equal(history.body.items.length, 1);
+  assert.equal(history.body.items[0].origin, 'math_exam');
+  const csYears = await call(handle, '/api/cs408/papers');
+  assert.equal(csYears.body.items.length, 18);
+  assert.equal(csYears.body.items.every(item => item.status === null), true);
+});
+
+test('408 full paper is isolated, auto-grades single choice and feeds the 408 wrong book', async () => {
+  const runtime = createLocalRuntime();
+  const handle = application(runtime);
+  const csKnowledge = await call(handle, '/api/cs408/knowledge');
+  assert.equal(csKnowledge.status, 200);
+  assert.equal(csKnowledge.body.items.length, 144);
+  const mathKnowledge = await call(handle, '/api/knowledge');
+  assert.ok(mathKnowledge.body.items.every(node => !['DS', 'CO', 'OS', 'CN'].includes(node.code)));
+
+  const years = await call(handle, '/api/cs408/papers');
+  assert.equal(years.status, 200);
+  assert.equal(years.body.items.length, 18);
+  assert.equal(years.body.items[0].year, 2026);
+  assert.equal(years.body.items.at(-1).year, 2009);
+
+  const created = await call(handle, '/api/cs408/papers', { method: 'POST', key: key(), body: { year: 2009 } });
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+  assert.equal(created.body.items.length, 47);
+  assert.equal(created.body.items.filter(item => item.question.qtype === 'single_choice').length, 40);
+  assert.equal(created.body.items[0].question.answer_latex, undefined);
+  assert.ok(created.body.items[0].question.question_html.includes('打印数据缓冲区'));
+
+  const answers = created.body.items.map(item => {
+    const question = runtime.questions.find(candidate => candidate.id === item.question_id);
+    return { question_id: question.id, answer_raw: question.qtype === 'single_choice' ? question.answer_latex : '' };
+  });
+  const first = runtime.questions.find(question => question.id === created.body.items[0].question_id);
+  answers[0].answer_raw = first.answer_latex === 'A' ? 'B' : 'A';
+  const submitted = await call(handle, `/api/cs408/papers/${created.body.id}/submit`, { method: 'POST', key: key(), body: { answers } });
+  assert.equal(submitted.status, 200, JSON.stringify(submitted.body));
+  assert.equal(submitted.body.result.attempts.length, 47);
+  assert.equal(submitted.body.result.score_x2, 156);
+  assert.equal(submitted.body.result.max_score_x2, 160);
+
+  const csWrong = await call(handle, '/api/cs408/wrong-book');
+  assert.equal(csWrong.status, 200);
+  assert.equal(csWrong.body.items.length, 1);
+  assert.equal(csWrong.body.items[0].question.year, 2009);
+  assert.equal(csWrong.body.items[0].review.correct_answer, first.answer_latex);
+  const mathWrong = await call(handle, '/api/wrong-book');
+  assert.equal(mathWrong.body.items.length, 0);
+  const mathPapers = await call(handle, '/api/papers');
+  assert.equal(mathPapers.body.items.length, 0);
+  const yearsAfter = await call(handle, '/api/cs408/papers');
+  const y2009 = yearsAfter.body.items.find(item => item.year === 2009);
+  assert.equal(y2009.status, 'submitted');
+  assert.equal(y2009.score_x2, 156);
+  const history = await call(handle, '/api/cs408/history');
+  assert.equal(history.status, 200);
+  assert.equal(history.body.items.length, 1);
+  assert.equal(history.body.items[0].origin, 'cs408_exam');
+  assert.equal(history.body.items[0].questions, 47);
+  const metrics = await call(handle, '/api/cs408/metrics');
+  assert.equal(metrics.status, 200);
+  assert.equal(metrics.body.submitted, 1);
+  assert.equal(metrics.body.single_attempts, 40);
+  assert.ok(metrics.body.chapters.length > 0);
+  assert.equal(metrics.body.wrong_count, 1);
+});
+
+test('408 practice composes a chapter drill and auto-grades it', async () => {
+  const runtime = createLocalRuntime();
+  const handle = application(runtime);
+  const knowledge = await call(handle, '/api/cs408/knowledge');
+  const chapter = knowledge.body.items.find(node => node.code === 'DS4');
+  assert.ok(chapter, 'DS4 chapter');
+  assert.ok(chapter.question_count >= 5, `DS4 count ${chapter.question_count}`);
+  const created = await call(handle, '/api/cs408/practice', { method: 'POST', key: key(), body: { node_ids: [chapter.id], count: 5 } });
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+  assert.equal(created.body.origin, 'cs408_practice');
+  assert.equal(created.body.items.length, 5);
+  assert.ok(created.body.items.every(item => item.question.qtype === 'single_choice'));
+  assert.ok(created.body.items.every(item => item.question.knowledge.some(node => node.code === 'DS4')));
+  assert.equal(created.body.auto_score_x2, 20);
+  const answers = created.body.items.map(item => {
+    const question = runtime.questions.find(candidate => candidate.id === item.question_id);
+    return { question_id: question.id, answer_raw: question.answer_latex };
+  });
+  const submitted = await call(handle, `/api/cs408/papers/${created.body.id}/submit`, { method: 'POST', key: key(), body: { answers } });
+  assert.equal(submitted.status, 200);
+  assert.equal(submitted.body.result.score_x2, 20);
+  assert.equal(submitted.body.result.max_score_x2, 20);
+  const mathPapers = await call(handle, '/api/papers');
+  assert.equal(mathPapers.body.items.length, 0);
+  const history = await call(handle, '/api/cs408/history');
+  assert.equal(history.body.items[0].origin, 'cs408_practice');
+  const metrics = await call(handle, '/api/cs408/metrics');
+  assert.equal(metrics.body.practice_papers, 1);
+});
+
+test('408 repair diagnoses, generates blind-solved variants and advances one round', async () => {
+  const runtime = createLocalRuntime();
+  const handle = application(runtime);
+  const source = runtime.questions.find(question => question.subject === 'cs408' && question.qtype === 'single_choice');
+  assert.ok(source);
+  const attempt = {
+    id: crypto.randomUUID(), device_id: device, paper_instance_id: crypto.randomUUID(),
+    question_id: source.id, answer_raw: source.answer_latex === 'A' ? 'B' : 'A',
+    score_x2: 0, max_score_x2: source.score_x2, error_tags_json: ['answer_mismatch'],
+    created_at: new Date().toISOString(),
+  };
+  runtime.attempts.push(attempt);
+  runtime.wrongBook.push({
+    device_id: device, question_id: source.id, attempt_id: attempt.id, mastery: 0,
+    first_wrong_at: new Date().toISOString(), next_review_at: new Date().toISOString(),
+    review_count: 0, attempt_history_json: [attempt.id],
+  });
+  let calls = 0;
+  runtime.llm = async () => {
+    calls += 1;
+    if (calls === 1) return JSON.stringify({
+      cause_tags: ['概念'], summary: '没有先判断考查的章节概念', first_gap: '遗漏关键条件',
+      focus: '先定位章节和关键条件', confidence: 86,
+    });
+    if (calls === 2) return JSON.stringify({ items: [1, 2, 3].map(index => ({
+      source_question_id: source.id, qtype: 'single_choice', stem: `408 修复变式 ${index}`,
+      options: [{ label: 'A', text: '选项 A' }, { label: 'B', text: '选项 B' }, { label: 'C', text: '选项 C' }, { label: 'D', text: '选项 D' }],
+      answer_latex: 'B', knowledge_code: source.knowledge[0].code, exam_point: '同章节考点',
+      difficulty: 'medium', explanation: '先判断章节概念，再逐项排除。',
+    })) });
+    return JSON.stringify({ answers: [1, 2, 3].map(index => ({ index, answer_latex: 'B' })) });
+  };
+  const cases = await call(handle, '/api/cs408/repair/today');
+  assert.equal(cases.status, 200);
+  assert.equal(cases.body.items.length, 1);
+  assert.equal(cases.body.items[0].status, 'new');
+  const queued = await call(handle, `/api/cs408/repair/questions/${source.id}/generate`, { method: 'POST', key: key(), body: {} });
+  assert.equal(queued.status, 202, JSON.stringify(queued.body));
+  const diagnosed = await call(handle, `/api/jobs/${queued.body.job_id}/step`, { method: 'POST', body: {} });
+  assert.equal(diagnosed.body.stage, '诊断错因');
+  assert.equal(runtime.repairCases.find(item => item.question_id === source.id).diagnosis.confidence, 86);
+  const generated = await call(handle, `/api/jobs/${queued.body.job_id}/step`, { method: 'POST', body: {} });
+  assert.equal(generated.body.generated_count, 3);
+  const verified = await call(handle, `/api/jobs/${queued.body.job_id}/step`, { method: 'POST', body: {} });
+  assert.equal(verified.body.verified_count, 3);
+  const completed = await call(handle, `/api/jobs/${queued.body.job_id}/step`, { method: 'POST', body: {} });
+  assert.equal(completed.body.status, 'succeeded', JSON.stringify(completed.body));
+  assert.equal(completed.body.paper.subject, 'cs408');
+  assert.equal(completed.body.paper.origin, 'repair');
+  assert.equal(completed.body.paper.items_json.length, 3);
+  assert.ok(completed.body.paper.items_json.every(item => item.question.question_html.includes('408 修复变式')));
+  const answers = completed.body.paper.items_json.map(item => ({
+    question_id: item.question.id,
+    answer_raw: runtime.questions.find(question => question.id === item.question.id).answer_latex,
+  }));
+  const submit = await call(handle, `/api/cs408/papers/${completed.body.paper.id}/submit`, { method: 'POST', key: key(), body: { answers } });
+  assert.equal(submit.status, 200, JSON.stringify(submit.body));
+  assert.equal(submit.body.result.score_x2, 12);
+  assert.equal(submit.body.result.max_score_x2, 12);
+  const repair = runtime.repairCases.find(item => item.question_id === source.id);
+  assert.equal(repair.repair_passes, 1);
+  assert.ok(repair.next_repair_at);
+  const mathCases = await call(handle, '/api/repair/cases');
+  assert.equal(mathCases.body.items.length, 0);
+});
+
+test('408 assistant keeps its own profile and conversation and injects real 408 data', async () => {
+  const runtime = createLocalRuntime();
+  runtime.llm = async messages => {
+    const system = messages[0]?.content || '';
+    assert.ok(system.includes('408'));
+    assert.ok(system.includes('数据结构'));
+    return '今天先补数据结构图：2 道真题 + 复盘错因。';
+  };
+  const handle = application(runtime);
+  const initial = await call(handle, '/api/cs408/agent');
+  assert.equal(initial.status, 200);
+  assert.equal(initial.body.profile.subject, '408');
+  assert.equal(initial.body.configured, true);
+  assert.equal(initial.body.messages.length, 0);
+  const saved = await call(handle, '/api/cs408/agent/profile', { method: 'POST', key: key(), body: {
+    exam_year: 2027, target_score: 125, foundation: '一般', stage: '冲刺', daily_minutes: 150,
+    weak_points: ['图', 'Cache'], notes: '每天先练 408',
+  } });
+  assert.equal(saved.status, 200);
+  assert.equal(saved.body.profile.subject, '408');
+  assert.equal(saved.body.profile.target_score, 125);
+  assert.deepEqual(saved.body.profile.weak_points, ['图', 'Cache']);
+  const chat = await call(handle, '/api/cs408/agent/chat', { method: 'POST', key: key(), body: { message: '今天 408 怎么学？' } });
+  assert.equal(chat.status, 200, JSON.stringify(chat.body));
+  assert.ok(chat.body.reply.includes('数据结构图'));
+  assert.equal(chat.body.messages.length, 2);
+  assert.equal(chat.body.messages[0].role, 'user');
+  assert.equal(chat.body.messages[1].role, 'assistant');
+  const after = await call(handle, '/api/cs408/agent');
+  assert.equal(after.body.messages.length, 2);
+  const mathState = await call(handle, '/api/agent/state');
+  assert.equal(mathState.body.user_profile.subject, '数学二');
+  assert.equal(mathState.body.conversations.length, 0);
+});
+
+test('408 practice honors mode, mixed question types and year range', async () => {
+  const runtime = createLocalRuntime();
+  const handle = application(runtime);
+  const knowledge = await call(handle, '/api/cs408/knowledge');
+  const chapter = knowledge.body.items.find(node => node.code === 'DS4');
+  const created = await call(handle, '/api/cs408/practice', { method: 'POST', key: key(), body: {
+    node_ids: [chapter.id], type_counts: { single_choice: 3, free_response: 1 },
+    mode: 'exam', year_from: 2012, year_to: 2024, exclude_done: false,
+  } });
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+  assert.equal(created.body.mode, 'exam');
+  assert.ok(created.body.title.includes('综合练习'));
+  assert.equal(created.body.items.length, 4);
+  assert.equal(created.body.items.filter(item => item.question.qtype === 'single_choice').length, 3);
+  assert.equal(created.body.items.filter(item => item.question.qtype === 'free_response').length, 1);
+  assert.ok(created.body.items.every(item => item.question.year >= 2012 && item.question.year <= 2024));
+  assert.equal(created.body.auto_score_x2, 12);
+  const answers = created.body.items.map(item => {
+    const question = runtime.questions.find(candidate => candidate.id === item.question_id);
+    return { question_id: question.id, answer_raw: question.qtype === 'single_choice' ? question.answer_latex : '我的综合题解答' };
+  });
+  const submitted = await call(handle, `/api/cs408/papers/${created.body.id}/submit`, { method: 'POST', key: key(), body: { answers } });
+  assert.equal(submitted.status, 200);
+  assert.equal(submitted.body.result.score_x2, 12);
+  assert.equal(submitted.body.result.max_score_x2, 12);
+  assert.equal(submitted.body.result.free_answered, 1);
+});
+
+test('408 AI practice generates, blind-solves and mixes with real questions', async () => {
+  const runtime = createLocalRuntime();
+  const handle = application(runtime);
+  const knowledge = await call(handle, '/api/cs408/knowledge');
+  const chapter = knowledge.body.items.find(node => node.code === 'DS4');
+  let calls = 0;
+  runtime.llm = async () => {
+    calls += 1;
+    if (calls === 1) return JSON.stringify({ items: [1, 2].map(index => ({
+      qtype: 'single_choice', stem: `408 AI 仿真题 ${index}`,
+      options: [{ label: 'A', text: '选项 A' }, { label: 'B', text: '选项 B' }, { label: 'C', text: '选项 C' }, { label: 'D', text: '选项 D' }],
+      answer_latex: 'B', knowledge_code: 'DS4', exam_point: '二叉树', difficulty: 'medium', explanation: '先判断树的结构。',
+    })) });
+    return JSON.stringify({ answers: [1, 2].map(index => ({ index, answer_latex: 'B' })) });
+  };
+  const queued = await call(handle, '/api/cs408/practice/ai', { method: 'POST', key: key(), body: {
+    node_ids: [chapter.id], source_mode: 'ai', mode: 'drill', type_counts: { single_choice: 2 },
+  } });
+  assert.equal(queued.status, 202, JSON.stringify(queued.body));
+  let job;
+  for (let i = 0; i < 4; i += 1) {
+    job = await call(handle, `/api/jobs/${queued.body.job_id}/step`, { method: 'POST', body: {} });
+    if (job.body.status === 'succeeded' || job.body.status === 'failed') break;
+  }
+  assert.equal(job.body.status, 'succeeded', JSON.stringify(job.body));
+  assert.equal(job.body.paper.subject, 'cs408');
+  assert.equal(job.body.paper.source_mode, 'ai');
+  assert.equal(job.body.paper.items_json.length, 2);
+  assert.ok(job.body.paper.items_json.every(item => item.question.question_html.includes('408 AI 仿真题')));
+  assert.ok(job.body.paper.items_json.every(item => item.question.source === 'ai'));
+});
+
+test('408 AI practice can generate a comprehensive question with AI review', async () => {
+  const runtime = createLocalRuntime();
+  const handle = application(runtime);
+  const knowledge = await call(handle, '/api/cs408/knowledge');
+  const chapter = knowledge.body.items.find(node => node.code === 'DS4');
+  let calls = 0;
+  runtime.llm = async () => {
+    calls += 1;
+    if (calls === 1) return JSON.stringify({ items: [
+      { qtype: 'single_choice', stem: 'AI 单选：二叉树结点数', options: [{ label: 'A', text: 'A' }, { label: 'B', text: 'B' }, { label: 'C', text: 'C' }, { label: 'D', text: 'D' }], answer_latex: 'B', knowledge_code: 'DS4', exam_point: '二叉树', difficulty: 'medium', explanation: '解析。' },
+      { qtype: 'free_response', stem: 'AI 综合：请写出二叉树的先序和中序遍历，并说明时间复杂度。（1）先序（2）中序', reference_answer: '（1）根左右（2）左根右；时间复杂度 O(n)。', key_points: ['先序为根左右', '中序为左根右', '时间复杂度 O(n)'], knowledge_code: 'DS4', exam_point: '二叉树遍历', difficulty: 'medium' },
+    ] });
+    if (calls === 2) return JSON.stringify({ answers: [{ index: 1, answer_latex: 'B' }] });
+    return JSON.stringify({ items: [{ index: 1, consistent: true, confidence: 90, issues: '' }] });
+  };
+  const queued = await call(handle, '/api/cs408/practice/ai', { method: 'POST', key: key(), body: {
+    node_ids: [chapter.id], source_mode: 'ai', mode: 'drill', type_counts: { single_choice: 1, free_response: 1 },
+  } });
+  assert.equal(queued.status, 202, JSON.stringify(queued.body));
+  let job;
+  for (let i = 0; i < 4; i += 1) {
+    job = await call(handle, `/api/jobs/${queued.body.job_id}/step`, { method: 'POST', body: {} });
+    if (job.body.status === 'succeeded' || job.body.status === 'failed') break;
+  }
+  assert.equal(job.body.status, 'succeeded', JSON.stringify(job.body));
+  assert.equal(job.body.paper.items_json.length, 2);
+  const free = job.body.paper.items_json.find(item => item.question.qtype === 'free_response');
+  assert.ok(free);
+  assert.ok(free.question.question_text.includes('AI 综合'));
+  assert.equal(free.question.answer_html, undefined);
+  assert.equal(free.question.source, 'ai');
+  const answers = job.body.paper.items_json.map(item => ({
+    question_id: item.question.id,
+    answer_raw: item.question.qtype === 'single_choice' ? 'B' : '我的综合题作答',
+  }));
+  const submitted = await call(handle, `/api/cs408/papers/${job.body.paper.id}/submit`, { method: 'POST', key: key(), body: { answers } });
+  assert.equal(submitted.status, 200);
+  const freeAttempt = submitted.body.result.attempts.find(attempt => attempt.question_id === free.question.id);
+  assert.ok(freeAttempt.explanation_html.includes('时间复杂度'));
+  assert.equal(freeAttempt.max_score_x2, 0);
+});
+
+test('408 mixed practice combines real and AI questions', async () => {
+  const runtime = createLocalRuntime();
+  const handle = application(runtime);
+  const knowledge = await call(handle, '/api/cs408/knowledge');
+  const chapter = knowledge.body.items.find(node => node.code === 'DS4');
+  runtime.llm = async () => {
+    if (!globalThis.__mixedCalls) globalThis.__mixedCalls = 0;
+    globalThis.__mixedCalls += 1;
+    if (globalThis.__mixedCalls === 1) return JSON.stringify({ items: [{
+      qtype: 'single_choice', stem: '408 混合 AI 题',
+      options: [{ label: 'A', text: 'A' }, { label: 'B', text: 'B' }, { label: 'C', text: 'C' }, { label: 'D', text: 'D' }],
+      answer_latex: 'B', knowledge_code: 'DS4', exam_point: '二叉树', explanation: '解析。',
+    }] });
+    return JSON.stringify({ answers: [{ index: 1, answer_latex: 'B' }] });
+  };
+  const queued = await call(handle, '/api/cs408/practice/ai', { method: 'POST', key: key(), body: {
+    node_ids: [chapter.id], source_mode: 'mixed', mode: 'drill', type_counts: { single_choice: 2, free_response: 1 },
+  } });
+  assert.equal(queued.status, 202, JSON.stringify(queued.body));
+  let job;
+  for (let i = 0; i < 4; i += 1) {
+    job = await call(handle, `/api/jobs/${queued.body.job_id}/step`, { method: 'POST', body: {} });
+    if (job.body.status === 'succeeded' || job.body.status === 'failed') break;
+  }
+  assert.equal(job.body.status, 'succeeded', JSON.stringify(job.body));
+  assert.equal(job.body.paper.source_mode, 'mixed');
+  assert.equal(job.body.paper.items_json.length, 3);
+  assert.equal(job.body.paper.actual_ratio.ai, 1);
+  assert.equal(job.body.paper.actual_ratio.real, 2);
+  assert.equal(job.body.paper.items_json.filter(item => item.question.source === 'ai').length, 1);
+  assert.equal(job.body.paper.items_json.filter(item => item.question.source === 'real').length, 2);
+});
+
 test('real paper → submit → wrong book → review and similar questions', async () => {
   const runtime = createLocalRuntime();
   const handle = application(runtime);
@@ -354,10 +719,116 @@ test('wrong-book variants form a paper, track mastery and unlock deletion', asyn
   const history = (await call(handle, '/api/papers')).body.items.find(paper => paper.id === job.body.paper.id);
   assert.equal(history.origin, 'variant');
   assert.ok(history.title.includes('错题仿真'));
+  const blockedAfterOneRound = await call(handle, `/api/wrong-book/${wrongQuestion.id}`, { method: 'DELETE', body: { device_id: device } });
+  assert.equal(blockedAfterOneRound.status, 409, JSON.stringify(blockedAfterOneRound.body));
+  const repairCase = runtime.repairCases.find(item => item.device_id === device && item.question_id === wrongQuestion.id);
+  repairCase.repair_passes = 5;
   const deleted = await call(handle, `/api/wrong-book/${wrongQuestion.id}`, { method: 'DELETE', body: { device_id: device } });
   assert.equal(deleted.status, 200, JSON.stringify(deleted.body));
   assert.equal((await call(handle, '/api/wrong-book')).body.items.length, 0);
 });
+test('repair case diagnoses wrong answer, generates variants and completes after master', async () => {
+  const runtime = createLocalRuntime();
+  const handle = application(runtime);
+  const source = runtime.questions.find(question => question.source === 'real' && question.qtype === 'single_choice');
+  const attempt = {
+    id: crypto.randomUUID(), device_id: device, paper_instance_id: crypto.randomUUID(),
+    question_id: source.id, answer_raw: 'A', score_x2: 0, max_score_x2: source.score_x2,
+    error_tags_json: ['answer_mismatch'], created_at: new Date().toISOString(),
+  };
+  runtime.attempts.push(attempt);
+  runtime.wrongBook.push({
+    device_id: device, question_id: source.id, attempt_id: attempt.id, mastery: 0,
+    first_wrong_at: new Date().toISOString(), next_review_at: new Date().toISOString(),
+    review_count: 0, attempt_history_json: [attempt.id],
+  });
+  let calls = 0;
+  runtime.llm = async () => {
+    calls += 1;
+    if (calls === 1) return JSON.stringify({
+      cause_tags: ['方法'], summary: '没有先判断极限的存在性', first_gap: '遗漏单侧极限', focus: '先分左右极限', confidence: 88,
+    });
+    if (calls === 2) return JSON.stringify({ items: [1, 2, 3].map(index => ({
+      source_question_id: source.id, qtype: source.qtype, stem_latex: `修复变式 ${index}`,
+      options: [{ label: 'A', latex: '$0$' }, { label: 'B', latex: '$1$' }, { label: 'C', latex: '$2$' }, { label: 'D', latex: '$3$' }],
+      answer_latex: 'B', knowledge_code: source.knowledge[0].code, exam_point: '函数概念',
+      difficulty: source.difficulty, explanation: '先判断极限存在性。', solution_steps: ['判断左右极限'],
+    })) });
+    return JSON.stringify({ answers: [1, 2, 3].map(index => ({ index, answer_latex: 'B' })) });
+  };
+  const cases = await call(handle, '/api/repair/cases');
+  assert.equal(cases.status, 200);
+  assert.equal(cases.body.items.length, 1);
+  assert.equal(cases.body.items[0].status, 'new');
+  const queued = await call(handle, `/api/repair/questions/${source.id}/generate`, { method: 'POST', key: key(), body: {} });
+  assert.equal(queued.status, 202, JSON.stringify(queued.body));
+  const diagnosed = await call(handle, `/api/jobs/${queued.body.job_id}/step`, { method: 'POST', body: {} });
+  assert.equal(diagnosed.body.stage, '诊断错因');
+  assert.equal(runtime.repairCases[0].diagnosis.confidence, 88);
+  const generated = await call(handle, `/api/jobs/${queued.body.job_id}/step`, { method: 'POST', body: {} });
+  assert.equal(generated.body.generated_count, 3);
+  const verified = await call(handle, `/api/jobs/${queued.body.job_id}/step`, { method: 'POST', body: {} });
+  assert.equal(verified.body.verified_count, 3);
+  const completed = await call(handle, `/api/jobs/${queued.body.job_id}/step`, { method: 'POST', body: {} });
+  assert.equal(completed.body.status, 'succeeded', JSON.stringify(completed.body));
+  assert.equal(completed.body.paper.origin, 'repair');
+  assert.ok(completed.body.paper.title.startsWith('AI 修复'));
+  assert.ok(!completed.body.paper.title.includes('$'));
+  assert.ok(!completed.body.paper.title.includes('\begin'));
+  assert.equal(runtime.repairCases[0].status, 'ready');
+  assert.equal(runtime.repairCases[0].paper_id, completed.body.paper.id);
+  const answers = completed.body.paper.items_json.map(item => ({
+    question_id: item.question.id,
+    answer_raw: runtime.questions.find(q => q.id === item.question.id).answer_latex,
+  }));
+  const submitted = await call(handle, `/api/papers/${completed.body.paper.id}/submit`, { method: 'POST', key: key(), body: { device_id: device, answers } });
+  assert.equal(submitted.status, 200, JSON.stringify(submitted.body));
+  const refreshed = await call(handle, '/api/repair/cases');
+  assert.equal(refreshed.body.items[0].status, 'passed');
+  assert.equal(refreshed.body.items[0].repair_passes, 1);
+  assert.equal(refreshed.body.items[0].repair_variants_done, 3);
+  const repairCase = runtime.repairCases[0];
+  repairCase.repair_passes = 4;
+  repairCase.repair_variants_done = 12;
+  repairCase.round_history = [];
+  syncRepairForPaper(runtime, completed.body.paper);
+  const mastered = await call(handle, '/api/repair/cases');
+  assert.equal(mastered.body.items[0].status, 'completed');
+  assert.equal(mastered.body.items[0].repair_passes, 5);
+  assert.equal(mastered.body.items[0].repair_variants_done, 15);
+});
+
+test('daily repair queue randomly selects 3-5 wrong questions and stays fixed for the day', async () => {
+  const runtime = createLocalRuntime();
+  const handle = application(runtime);
+  const questions = runtime.questions.filter(question => question.source === 'real').slice(0, 10);
+  for (const question of questions) {
+    runtime.wrongBook.push({
+      device_id: device, question_id: question.id, mastery: 0,
+      first_wrong_at: new Date().toISOString(), next_review_at: new Date().toISOString(), review_count: 0,
+    });
+  }
+  const first = await call(handle, '/api/repair/today');
+  assert.equal(first.status, 200);
+  assert.equal(first.body.items.length, 4);
+  assert.equal(first.body.backlog_count, 10);
+  const ids = first.body.items.map(item => item.question_id);
+  assert.equal(new Set(ids).size, ids.length);
+  assert.ok(first.body.items.every(item => item.selection_count === 1));
+  assert.ok(first.body.items.every(item => item.repair_passes === 0));
+  const second = await call(handle, '/api/repair/today');
+  assert.deepEqual(second.body.items.map(item => item.question_id), ids);
+  assert.equal(second.body.date, first.body.date);
+  assert.ok(second.body.items.every(item => item.selection_count === 1));
+  const replaced = await call(handle, '/api/repair/today/replace', { method: 'POST', key: key(), body: { device_id: device, question_id: ids[0] } });
+  assert.equal(replaced.status, 200, JSON.stringify(replaced.body));
+  assert.equal(replaced.body.items.length, 4);
+  assert.notEqual(replaced.body.items[0].question_id, ids[0]);
+  assert.equal(new Set(replaced.body.items.map(item => item.question_id)).size, 4);
+  const afterReplace = await call(handle, '/api/repair/today');
+  assert.deepEqual(afterReplace.body.items.map(item => item.question_id), replaced.body.items.map(item => item.question_id));
+});
+
 test('variant jobs reuse matching AI questions before generating replacements', async () => {
   const runtime = createLocalRuntime({ random: () => 0.1 });
   const source = runtime.questions.find(question => question.source === 'real' && question.qtype === 'single_choice');

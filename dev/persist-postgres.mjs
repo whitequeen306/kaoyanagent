@@ -29,6 +29,17 @@ export function createPersistence(runtime, connectionString) {
           device_id text NOT NULL, question_id text NOT NULL, payload jsonb NOT NULL,
           PRIMARY KEY (device_id, question_id)
         );
+        CREATE TABLE IF NOT EXISTS repair_cases (
+          id text PRIMARY KEY, device_id text NOT NULL, question_id text NOT NULL, payload jsonb NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS repair_cases_device ON repair_cases (device_id);
+        CREATE TABLE IF NOT EXISTS repair_daily (
+          device_id text NOT NULL, date date NOT NULL, payload jsonb NOT NULL,
+          PRIMARY KEY (device_id, date)
+        );
+        CREATE TABLE IF NOT EXISTS repair_sampling (
+          device_id text PRIMARY KEY, payload jsonb NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS reports (id text PRIMARY KEY, payload jsonb NOT NULL);
         CREATE TABLE IF NOT EXISTS device_sessions (device_id text PRIMARY KEY, payload jsonb NOT NULL);
         CREATE TABLE IF NOT EXISTS ai_settings (
@@ -54,6 +65,11 @@ export function createPersistence(runtime, connectionString) {
       runtime.papers = (await pool.query('SELECT payload FROM papers')).rows.map(row => parse(row.payload));
       runtime.attempts = (await pool.query('SELECT payload FROM attempts')).rows.map(row => parse(row.payload));
       runtime.wrongBook = (await pool.query('SELECT payload FROM wrong_book')).rows.map(row => parse(row.payload));
+      runtime.repairCases = (await pool.query('SELECT payload FROM repair_cases')).rows.map(row => parse(row.payload));
+      const repairDaily = (await pool.query('SELECT payload FROM repair_daily')).rows.map(row => parse(row.payload));
+      runtime.repairDaily = new Map(repairDaily.map(record => [`${record.device_id}:${record.date}`, record]));
+      const repairSampling = (await pool.query('SELECT payload FROM repair_sampling')).rows.map(row => parse(row.payload));
+      runtime.repairSampling = new Map(repairSampling.map(record => [record.device_id, record]));
       runtime.reports = (await pool.query('SELECT payload FROM reports')).rows.map(row => parse(row.payload));
       runtime.deviceSessions = new Map((await pool.query('SELECT device_id, payload FROM device_sessions')).rows
         .map(row => [row.device_id, parse(row.payload)]));
@@ -87,7 +103,7 @@ export function createPersistence(runtime, connectionString) {
       client = await pool.connect();
       await ensureSchema();
       await client.query('BEGIN');
-      await client.query('DELETE FROM generated_questions; DELETE FROM papers; DELETE FROM attempts; DELETE FROM wrong_book; DELETE FROM reports; DELETE FROM device_sessions; DELETE FROM ai_settings; DELETE FROM usage; DELETE FROM meta; DELETE FROM agent_states; DELETE FROM daily_questions;');
+      await client.query('DELETE FROM generated_questions; DELETE FROM papers; DELETE FROM attempts; DELETE FROM wrong_book; DELETE FROM repair_cases; DELETE FROM repair_daily; DELETE FROM repair_sampling; DELETE FROM reports; DELETE FROM device_sessions; DELETE FROM ai_settings; DELETE FROM usage; DELETE FROM meta; DELETE FROM agent_states; DELETE FROM daily_questions;');
       for (const question of runtime.questions.filter(item => !baseQuestionIds.has(item.id))) {
         await client.query('INSERT INTO generated_questions (id, payload) VALUES ($1, $2::jsonb)', [question.id, JSON.stringify(question)]);
       }
@@ -102,6 +118,18 @@ export function createPersistence(runtime, connectionString) {
       for (const wrong of runtime.wrongBook) {
         await client.query('INSERT INTO wrong_book (device_id, question_id, payload) VALUES ($1, $2, $3::jsonb)',
           [wrong.device_id, wrong.question_id, JSON.stringify(wrong)]);
+      }
+      for (const repair of runtime.repairCases || []) {
+        await client.query('INSERT INTO repair_cases (id, device_id, question_id, payload) VALUES ($1, $2, $3, $4::jsonb)',
+          [repair.id, repair.device_id, repair.question_id, JSON.stringify(repair)]);
+      }
+      for (const record of runtime.repairDaily?.values() || []) {
+        await client.query('INSERT INTO repair_daily (device_id, date, payload) VALUES ($1, $2, $3::jsonb)',
+          [record.device_id, record.date, JSON.stringify(record)]);
+      }
+      for (const record of runtime.repairSampling?.values() || []) {
+        await client.query('INSERT INTO repair_sampling (device_id, payload) VALUES ($1, $2::jsonb)',
+          [record.device_id, JSON.stringify(record)]);
       }
       for (const report of runtime.reports) {
         await client.query('INSERT INTO reports (id, payload) VALUES ($1, $2::jsonb)', [report.id, JSON.stringify(report)]);

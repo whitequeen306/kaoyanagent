@@ -1,11 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { MathText } from './components/MathText';
+import { MathBackdrop } from './components/MathBackdrop';
+import { MathYearList } from './components/MathYearList';
 import { PdfPaper } from './components/PdfPaper';
+import { QuestionFigures } from './components/QuestionFigures';
 import { AgentPanel } from './components/AgentPanel';
+import { RepairPanel } from './components/RepairPanel';
 import { DailyQuestionCard } from './components/DailyQuestionCard';
+import { Cs408YearList } from './components/Cs408YearList';
+import { Cs408Compose, type Cs408ComposeOptions } from './components/Cs408Compose';
+import { Cs408RepairPanel } from './components/Cs408RepairPanel';
+import { Cs408History } from './components/Cs408History';
+import { Cs408Dashboard } from './components/Cs408Dashboard';
+import { Cs408AgentPanel } from './components/Cs408AgentPanel';
+import { Cs408PaperView } from './components/Cs408PaperView';
+import { Cs408WrongBook } from './components/Cs408WrongBook';
 import { pdfFileName, pickPdfDestination, savePdfElement } from './lib/pdf';
 import { deviceId, difficultyLabel, formatScore, request } from './lib/api';
-import type { DailyAnswerImage, DailyQuestionState, DailyWrongAnswer, Difficulty, GradeResult, Knowledge, Paper, PaperMode, Qtype, SourceMode } from './types';
+import type { Cs408HistoryItem, Cs408Metrics, Cs408Paper, Cs408RepairCase, Cs408RepairPayload, Cs408WrongItem, Cs408Year, DailyAnswerImage, DailyQuestionState, DailyWrongAnswer, Difficulty, GradeResult, Knowledge, MathExamYear, Paper, PaperMode, Qtype, RepairCase, SourceMode } from './types';
 
 const qtypeOptions: { value: Qtype; label: string }[] = [
   { value: 'single_choice', label: '选择题' }, { value: 'fill_blank', label: '填空题' }, { value: 'free_response', label: '解答题' },
@@ -48,10 +60,24 @@ const jobErrorMessages: Record<string, string> = {
 };
 const qtypeLabel = (value: Qtype) => qtypeOptions.find(item => item.value === value)?.label || value;
 const sourceLabel = (value: string) => sourceOptions.find(item => item.value === value)?.label || value;
+const paperOriginKey = (paper: any) => paper.origin === 'repair' ? 'repair' : paper.origin === 'variant' ? 'variant' : paper.origin === 'math_exam' ? 'exam' : 'free';
+const paperOriginLabel = (paper: any) => paperOriginKey(paper) === 'repair' ? '错题修复' : paperOriginKey(paper) === 'variant' ? '错题仿真' : paperOriginKey(paper) === 'exam' ? '真题整卷' : '自由练习';
+const wrongRepairGroup = (item: any) => {
+  if ((item.repair?.repair_passes || 0) >= 5 || item.repair?.status === 'completed') return 'mastered';
+  if (['generating', 'ready', 'needs_retry', 'passed'].includes(item.repair?.status)) return 'repairing';
+  return 'needs_repair';
+};
+const wrongPassBucket = (item: any) => {
+  const passes = item.repair?.repair_passes || 0;
+  if (passes === 0) return '0';
+  if (passes <= 2) return '1-2';
+  if (passes <= 4) return '3-4';
+  return '5';
+};
 
 export default function App() {
-  const [view, setView] = useState<'compose' | 'paper' | 'wrong' | 'papers' | 'metrics' | 'agent'>('compose');
-  const [paperOrigin, setPaperOrigin] = useState<'compose' | 'papers'>('compose');
+  const [view, setView] = useState<'repair' | 'compose' | 'paper' | 'wrong' | 'papers' | 'examPapers' | 'metrics' | 'agent'>('compose');
+  const [paperOrigin, setPaperOrigin] = useState<'compose' | 'papers' | 'repair' | 'exams'>('compose');
   const [knowledge, setKnowledge] = useState<Knowledge[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [query, setQuery] = useState('');
@@ -85,12 +111,31 @@ export default function App() {
   const [pdfBusy, setPdfBusy] = useState(false);
   const [pdfMessage, setPdfMessage] = useState('');
   const [wrongItems, setWrongItems] = useState<any[]>([]);
+  const [repairCases, setRepairCases] = useState<RepairCase[]>([]);
+  const [repairLoading, setRepairLoading] = useState(false);
+  const [repairDate, setRepairDate] = useState('');
+  const [repairBacklogCount, setRepairBacklogCount] = useState(0);
   const dailyWrongTarget = useRef<string | null>(null);
   const [selectedWrong, setSelectedWrong] = useState<string[]>([]);
   const [variantCounts, setVariantCounts] = useState<Record<string, number>>({});
   const [myPapers, setMyPapers] = useState<any[]>([]);
+  const [paperStatusFilter, setPaperStatusFilter] = useState('all');
+  const [paperOriginFilter, setPaperOriginFilter] = useState('all');
+  const [paperModeFilter, setPaperModeFilter] = useState('all');
+  const [paperSourceFilter, setPaperSourceFilter] = useState('all');
+  const [paperYearFilter, setPaperYearFilter] = useState('all');
+  const [paperTimeFilter, setPaperTimeFilter] = useState('all');
+  const [wrongStatusFilter, setWrongStatusFilter] = useState('all');
+  const [wrongCauseFilter, setWrongCauseFilter] = useState('all');
+  const [wrongSourceFilter, setWrongSourceFilter] = useState('all');
+  const [wrongTypeFilter, setWrongTypeFilter] = useState('all');
+  const [wrongYearFilter, setWrongYearFilter] = useState('all');
+  const [wrongPassFilter, setWrongPassFilter] = useState('all');
+  const [wrongKnowledgeFilter, setWrongKnowledgeFilter] = useState('all');
   const [metrics, setMetrics] = useState<any>(null);
   const [trends, setTrends] = useState<any[]>([]);
+  const [mathExamYears, setMathExamYears] = useState<MathExamYear[]>([]);
+  const [mathExamLoading, setMathExamLoading] = useState(false);
   const [showMathHelp, setShowMathHelp] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [dailyQuestion, setDailyQuestion] = useState<DailyQuestionState | null>(null);
@@ -102,6 +147,24 @@ export default function App() {
   const [dailyBusy, setDailyBusy] = useState(false);
   const [dailyAiBusy, setDailyAiBusy] = useState(false);
   const [dailyAiPrompt, setDailyAiPrompt] = useState('');
+  const [subject, setSubject] = useState<'math2' | 'cs408'>(() => localStorage.getItem('kaoyan-subject') === 'cs408' ? 'cs408' : 'math2');
+  const [cs408View, setCs408View] = useState<'compose' | 'repair' | 'papers' | 'paper' | 'wrong' | 'history' | 'metrics' | 'agent'>('papers');
+  const [cs408PaperBack, setCs408PaperBack] = useState<'compose' | 'repair' | 'papers' | 'history' | 'metrics'>('papers');
+  const [cs408Years, setCs408Years] = useState<Cs408Year[]>([]);
+  const [cs408Paper, setCs408Paper] = useState<Cs408Paper | null>(null);
+  const [cs408Answers, setCs408Answers] = useState<Record<string, string>>({});
+  const [cs408Wrong, setCs408Wrong] = useState<Cs408WrongItem[]>([]);
+  const [cs408RepairCases, setCs408RepairCases] = useState<Cs408RepairCase[]>([]);
+  const [cs408RepairDate, setCs408RepairDate] = useState('');
+  const [cs408RepairBacklog, setCs408RepairBacklog] = useState(0);
+  const [cs408RepairCompleted, setCs408RepairCompleted] = useState(0);
+  const [cs408RepairLoading, setCs408RepairLoading] = useState(false);
+  const [cs408History, setCs408History] = useState<Cs408HistoryItem[]>([]);
+  const [cs408HistoryLoading, setCs408HistoryLoading] = useState(false);
+  const [cs408Metrics, setCs408Metrics] = useState<Cs408Metrics | null>(null);
+  const [cs408MetricsLoading, setCs408MetricsLoading] = useState(false);
+  const [cs408Busy, setCs408Busy] = useState(false);
+  const [cs408Loading, setCs408Loading] = useState(false);
 
   useEffect(() => {
     if (!paper || result) return;
@@ -115,27 +178,26 @@ export default function App() {
       setKnowledge(data.items);
     }).catch(e => setError(`知识点加载失败：${e instanceof Error ? e.message : '未知错误'}`));
     request<any>('/api/ai-settings').then(setAiSettings).catch(() => {});
+    void loadRepair();
     request<DailyQuestionState>('/api/daily-question').then(data => {
       setDailyQuestion(data);
       setDailyAnswer(data.result?.answer_raw ?? '');
       setDailyAnswerImage(null);
     }).catch(() => {});
-    const savedId = localStorage.getItem('kaoyan-paper-id');
-    if (savedId) {
-      request<Paper>(`/api/papers/${savedId}`).then(data => {
-        if (data.status !== 'draft') { localStorage.removeItem('kaoyan-paper-id'); return; }
-        setPaper(data);
-        const savedAnswers = localStorage.getItem(`kaoyan-answers-${data.id}`);
-        if (savedAnswers) setAnswers(JSON.parse(savedAnswers));
-        setView('paper');
-      }).catch(() => localStorage.removeItem('kaoyan-paper-id'));
-    }
   }, []);
   useEffect(() => {
     if (!paper) return;
     localStorage.setItem('kaoyan-paper-id', paper.id);
     localStorage.setItem(`kaoyan-answers-${paper.id}`, JSON.stringify(answers));
   }, [paper?.id, answers]);
+  useEffect(() => {
+    if (subject !== 'cs408' || cs408Years.length) return;
+    void loadCs408Years();
+  }, [subject]);
+  useEffect(() => {
+    if (!cs408Paper || cs408Paper.result) return;
+    localStorage.setItem(`kaoyan-cs408-answers-${cs408Paper.id}`, JSON.stringify(cs408Answers));
+  }, [cs408Paper?.id, cs408Answers]);
   const selectedNames = useMemo(() => knowledge.filter(n => selected.includes(n.id)).map(n => n.name), [knowledge, selected]);
   const totalCount = Object.values(typeCounts).reduce((sum, value) => sum + value, 0);
   const activeTypes = (Object.entries(typeCounts) as [Qtype, number][]).filter(([, value]) => value > 0);
@@ -148,7 +210,64 @@ export default function App() {
   const activeJobCount = jobs.filter(task => task.status === 'running').length;
   const queuedJobCount = jobs.filter(task => task.status === 'queued').length;
   const completedJobCount = jobs.filter(task => task.status === 'succeeded').length;
+  useEffect(() => {
+    if (subject !== 'cs408' || cs408View !== 'repair') return;
+    void loadCs408Repair();
+  }, [subject, cs408View, completedJobCount]);
   const variantTotal = selectedWrong.reduce((sum, id) => sum + (variantCounts[id] || 3), 0);
+
+  const paperYears = useMemo(() => [...new Set(myPapers.flatMap(paper => paper.years || []))].sort((a, b) => b - a), [myPapers]);
+  const paperStatusCounts = useMemo(() => ({
+    all: myPapers.length,
+    draft: myPapers.filter(paper => paper.status !== 'submitted').length,
+    submitted: myPapers.filter(paper => paper.status === 'submitted').length,
+  }), [myPapers]);
+  const filteredPapers = useMemo(() => myPapers.filter(paper => {
+    if (paperStatusFilter !== 'all' && (paperStatusFilter === 'submitted' ? paper.status !== 'submitted' : paper.status === 'submitted')) return false;
+    if (paperOriginFilter !== 'all' && paperOriginKey(paper) !== paperOriginFilter) return false;
+    if (paperModeFilter !== 'all' && paper.mode !== paperModeFilter) return false;
+    if (paperSourceFilter !== 'all' && paper.source_mode !== paperSourceFilter) return false;
+    if (paperYearFilter !== 'all' && !(paper.years || []).includes(Number(paperYearFilter))) return false;
+    if (paperTimeFilter !== 'all') {
+      const days = (Date.now() - new Date(paper.created_at).getTime()) / 86400000;
+      if (paperTimeFilter === '7' && days > 7) return false;
+      if (paperTimeFilter === '30' && days > 30) return false;
+      if (paperTimeFilter === 'older' && days <= 30) return false;
+    }
+    return true;
+  }), [myPapers, paperStatusFilter, paperOriginFilter, paperModeFilter, paperSourceFilter, paperYearFilter, paperTimeFilter]);
+  const wrongGroupCounts = useMemo(() => ({
+    all: wrongItems.length,
+    needs_repair: wrongItems.filter(item => wrongRepairGroup(item) === 'needs_repair').length,
+    repairing: wrongItems.filter(item => wrongRepairGroup(item) === 'repairing').length,
+    mastered: wrongItems.filter(item => wrongRepairGroup(item) === 'mastered').length,
+  }), [wrongItems]);
+  const wrongCauses = useMemo(() => [...new Set(wrongItems.flatMap(item => item.repair?.diagnosis?.cause_tags || []))], [wrongItems]);
+  const wrongYears = useMemo(() => [...new Set(wrongItems.map(item => item.question?.year).filter(Boolean))].sort((a, b) => b - a), [wrongItems]);
+  const wrongKnowledge = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const item of wrongItems) for (const node of item.knowledge || []) map.set(node.code, node.name);
+    return [...map.entries()].map(([code, name]) => ({ code, name }));
+  }, [wrongItems]);
+  const filteredWrong = useMemo(() => wrongItems.filter(item => {
+    if (wrongStatusFilter !== 'all' && wrongRepairGroup(item) !== wrongStatusFilter) return false;
+    if (wrongCauseFilter !== 'all') {
+      const causes = item.repair?.diagnosis?.cause_tags || [];
+      if (wrongCauseFilter === 'none' ? causes.length > 0 : !causes.includes(wrongCauseFilter)) return false;
+    }
+    if (wrongSourceFilter !== 'all' && item.question?.source !== wrongSourceFilter) return false;
+    if (wrongTypeFilter !== 'all' && item.question?.qtype !== wrongTypeFilter) return false;
+    if (wrongYearFilter !== 'all' && item.question?.year !== Number(wrongYearFilter)) return false;
+    if (wrongPassFilter !== 'all' && wrongPassBucket(item) !== wrongPassFilter) return false;
+    if (wrongKnowledgeFilter !== 'all' && !(item.knowledge || []).some((node: any) => node.code === wrongKnowledgeFilter)) return false;
+    return true;
+  }), [wrongItems, wrongStatusFilter, wrongCauseFilter, wrongSourceFilter, wrongTypeFilter, wrongYearFilter, wrongPassFilter, wrongKnowledgeFilter]);
+  const paperFiltersActive = [paperStatusFilter, paperOriginFilter, paperModeFilter, paperSourceFilter, paperYearFilter, paperTimeFilter].some(value => value !== 'all');
+  const wrongFiltersActive = [wrongStatusFilter, wrongCauseFilter, wrongSourceFilter, wrongTypeFilter, wrongYearFilter, wrongPassFilter, wrongKnowledgeFilter].some(value => value !== 'all');
+
+  useEffect(() => {
+    if (view === 'repair') void loadRepair();
+  }, [view, completedJobCount]);
 
   useEffect(() => {
     if (activeJobCount >= MAX_ACTIVE_JOBS) return;
@@ -275,9 +394,23 @@ export default function App() {
       window.clearInterval(poller);
     }
   }
-  function openJobPaper(task: JobTask) {
+  async function openJobPaper(task: JobTask) {
     if (!task.paper) return;
-    setPaperOrigin('compose');
+    if ((task.paper as any).subject === 'cs408') {
+      try {
+        const data = await request<Cs408Paper>(`/api/cs408/papers/${task.paper.id}`);
+        setSubject('cs408');
+        localStorage.setItem('kaoyan-subject', 'cs408');
+        setCs408Paper(data);
+        setCs408Answers(data.result ? Object.fromEntries(data.result.attempts.map(attempt => [attempt.question_id, attempt.answer_raw || ''])) : {});
+        setCs408PaperBack(data.origin === 'cs408_practice' ? 'compose' : data.origin === 'repair' ? 'repair' : 'papers');
+        setCs408View('paper');
+        setJobs(list => list.filter(item => item.id !== task.id));
+        window.scrollTo({ top: 0, behavior: 'instant' });
+      } catch (e) { setError(e instanceof Error ? e.message : '408 修复卷加载失败'); }
+      return;
+    }
+    setPaperOrigin((task.paper as any).config_json?.origin === 'repair' ? 'repair' : 'compose');
     setPaper(task.paper); setAnswers({}); setResult(null); setExpandedReviews({}); setElapsed(0); setView('paper');
     setJobs(list => list.filter(item => item.id !== task.id));
   }
@@ -300,6 +433,7 @@ export default function App() {
         answers: paper.items_json.map(item => ({ question_id: item.question.id, answer_raw: answers[item.question.id] || '', duration_sec: elapsed })),
       } });
       setResult(data);
+      if (paperOrigin === 'exams') void loadMathExamYears(false);
       setTimeout(() => document.getElementById('grade-result')?.scrollIntoView({ behavior: 'smooth' }), 50);
     } catch (e) { setError(e instanceof Error ? e.message : '判卷失败'); }
     finally { setBusy(false); }
@@ -356,6 +490,51 @@ export default function App() {
     card?.scrollIntoView({ block: 'start', behavior: 'instant' });
     dailyWrongTarget.current = null;
   }, [view]);
+  async function loadRepair() {
+    setRepairLoading(true);
+    try {
+      const data = await request<{ items: RepairCase[]; date: string; backlog_count: number }>('/api/repair/today');
+      setRepairCases(data.items);
+      setRepairDate(data.date);
+      setRepairBacklogCount(data.backlog_count);
+    } catch (e) { setError(e instanceof Error ? e.message : '修复队列加载失败'); }
+    finally { setRepairLoading(false); }
+  }
+  async function startRepair(questionId: string) {
+    if (!aiSettings?.configured) { openSettings(); return; }
+    setError('');
+    try {
+      const data = await request<any>(`/api/repair/questions/${questionId}/generate`, { method: 'POST', body: {} });
+      setJobs(list => [...list, {
+        id: data.job_id, status: 'queued', stage: data.stage || '排队中', progress: data.progress || 0,
+        requestLabel: 'AI 修复 · 错因诊断与定向变式', detail: data.detail || '正在准备 AI 修复…',
+        phase: data.phase, expectedCount: data.expected_count || 3, generatedCount: 0, verifiedCount: 0, reusedCount: 0,
+      }]);
+      setJobsOpen(true);
+      await loadRepair();
+    } catch (e) { setError(e instanceof Error ? e.message : 'AI 修复启动失败'); }
+  }
+  async function replaceRepair(questionId: string) {
+    setBusy(true); setError('');
+    try {
+      const data = await request<any>('/api/repair/today/replace', { method: 'POST', body: { question_id: questionId } });
+      setRepairCases(data.items);
+      setRepairDate(data.date);
+      setRepairBacklogCount(data.backlog_count);
+    } catch (e) { setError(e instanceof Error ? e.message : '替换错题失败'); }
+    finally { setBusy(false); }
+  }
+  async function openRepairPaper(item: RepairCase) {
+    if (!item.paper_id) return;
+    setBusy(true); setError('');
+    try {
+      const data = await request<Paper>(`/api/papers/${item.paper_id}`);
+      setPaper(data); setPaperOrigin('repair');
+      setAnswers(data.result ? Object.fromEntries(data.result.attempts.map(attempt => [attempt.question_id, attempt.answer_raw || ''])) : {});
+      setResult(data.result || null); setExpandedReviews({}); setElapsed(0); setView('paper');
+    } catch (e) { setError(e instanceof Error ? e.message : '修复卷加载失败'); }
+    finally { setBusy(false); }
+  }
   async function loadWrong() {
     setBusy(true); setError('');
     try {
@@ -501,8 +680,193 @@ export default function App() {
       setMetrics(current); setTrends(trend.series); setView('metrics');
     } catch (e) { setError(e instanceof Error ? e.message : '加载失败'); } finally { setBusy(false); }
   }
+  async function loadMathExamYears(navigate = true) {
+    setMathExamLoading(true);
+    if (navigate) setView('examPapers');
+    try {
+      const data = await request<{ items: MathExamYear[] }>('/api/math/exam-years');
+      setMathExamYears(data.items);
+    } catch (e) { setError(e instanceof Error ? e.message : '数学真题目录加载失败'); }
+    finally { setMathExamLoading(false); }
+  }
+  async function openMathExamYear(year: number, restart = false) {
+    setBusy(true); setError('');
+    try {
+      const created = await request<Paper>('/api/math/exam-papers', { method: 'POST', body: { year, restart } });
+      const data = await request<Paper>(`/api/papers/${created.id}`);
+      setPaper(data);
+      if (data.result) {
+        setAnswers(Object.fromEntries(data.result.attempts.map(attempt => [attempt.question_id, attempt.answer_raw || ''])));
+        setResult(data.result);
+      } else {
+        const saved = localStorage.getItem(`kaoyan-answers-${data.id}`);
+        setAnswers(saved ? JSON.parse(saved) : {});
+        setResult(null);
+      }
+      setExpandedReviews({});
+      setElapsed(0);
+      setPaperOrigin('exams');
+      setView('paper');
+      window.scrollTo({ top: 0, behavior: 'instant' });
+      void loadMathExamYears(false);
+    } catch (e) { setError(e instanceof Error ? e.message : '数学真题卷加载失败'); }
+    finally { setBusy(false); }
+  }
+
+  function switchSubject(next: 'math2' | 'cs408') {
+    setSubject(next);
+    localStorage.setItem('kaoyan-subject', next);
+    if (next === 'cs408') setCs408View('papers');
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }
+  async function loadCs408Years() {
+    setCs408Loading(true);
+    try {
+      const data = await request<{ items: Cs408Year[] }>('/api/cs408/papers');
+      setCs408Years(data.items);
+    } catch (e) { setError(e instanceof Error ? e.message : '408 试卷目录加载失败'); }
+    finally { setCs408Loading(false); }
+  }
+  async function openCs408Year(year: number, restart = false) {
+    setCs408Busy(true); setError('');
+    try {
+      const data = await request<Cs408Paper>('/api/cs408/papers', { method: 'POST', body: { year, restart } });
+      setCs408Paper(data);
+      if (data.result) {
+        setCs408Answers(Object.fromEntries(data.result.attempts.map(attempt => [attempt.question_id, attempt.answer_raw || ''])));
+      } else {
+        const saved = localStorage.getItem(`kaoyan-cs408-answers-${data.id}`);
+        setCs408Answers(saved ? JSON.parse(saved) : {});
+      }
+      setCs408PaperBack('papers');
+      setCs408View('paper');
+      window.scrollTo({ top: 0, behavior: 'instant' });
+      void loadCs408Years();
+    } catch (e) { setError(e instanceof Error ? e.message : '408 试卷加载失败'); }
+    finally { setCs408Busy(false); }
+  }
+  async function startCs408Practice(nodeIds: string[], options: Cs408ComposeOptions) {
+    if (options.source_mode !== 'real' && !aiSettings?.configured) { openSettings(); return; }
+    setCs408Busy(true); setError('');
+    try {
+      if (options.source_mode === 'real') {
+        const data = await request<Cs408Paper>('/api/cs408/practice', { method: 'POST', body: { node_ids: nodeIds, ...options } });
+        setCs408Paper(data);
+        setCs408Answers({});
+        setCs408PaperBack('compose');
+        setCs408View('paper');
+        window.scrollTo({ top: 0, behavior: 'instant' });
+      } else {
+        const queued = await request<any>('/api/cs408/practice/ai', { method: 'POST', body: { node_ids: nodeIds, ...options } });
+        const total = options.type_counts.single_choice + options.type_counts.free_response;
+        setJobs(list => [...list, {
+          id: queued.job_id, status: 'queued', stage: queued.stage || '排队中', progress: queued.progress || 0,
+          requestLabel: `408 ${sourceLabel(options.source_mode)} · ${total} 题`,
+          detail: queued.detail, phase: queued.phase, expectedCount: queued.expected_count || total,
+          generatedCount: 0, verifiedCount: 0, reusedCount: 0,
+        }]);
+        setJobsOpen(true);
+      }
+    } catch (e) { setError(e instanceof Error ? e.message : '408 练习卷生成失败'); }
+    finally { setCs408Busy(false); }
+  }
+  async function loadCs408Repair() {
+    setCs408RepairLoading(true);
+    try {
+      const data = await request<Cs408RepairPayload>('/api/cs408/repair/today');
+      setCs408RepairCases(data.items);
+      setCs408RepairDate(data.date);
+      setCs408RepairBacklog(data.backlog_count);
+      setCs408RepairCompleted(data.completed_count);
+    } catch (e) { setError(e instanceof Error ? e.message : '408 修复队列加载失败'); }
+    finally { setCs408RepairLoading(false); }
+  }
+  async function startCs408Repair(item: Cs408RepairCase) {
+    if (!aiSettings?.configured) { openSettings(); return; }
+    setCs408Busy(true); setError('');
+    try {
+      const data = await request<any>(`/api/cs408/repair/questions/${item.question_id}/generate`, { method: 'POST', body: {} });
+      setJobs(list => [...list, {
+        id: data.job_id, status: 'queued', stage: data.stage || '排队中', progress: data.progress || 0,
+        requestLabel: '408 AI 修复 · 3 道同章节变式', detail: data.detail || '正在准备 408 错因诊断…',
+        phase: data.phase, expectedCount: data.expected_count || 3, generatedCount: 0, verifiedCount: 0, reusedCount: 0,
+      }]);
+      setJobsOpen(true);
+      await loadCs408Repair();
+    } catch (e) { setError(e instanceof Error ? e.message : '408 AI 修复启动失败'); }
+    finally { setCs408Busy(false); }
+  }
+  async function openCs408RepairPaper(item: Cs408RepairCase) {
+    if (!item.paper_id) return;
+    setCs408Busy(true); setError('');
+    try {
+      const data = await request<Cs408Paper>(`/api/cs408/papers/${item.paper_id}`);
+      setCs408Paper(data);
+      setCs408Answers(data.result ? Object.fromEntries(data.result.attempts.map(attempt => [attempt.question_id, attempt.answer_raw || ''])) : {});
+      setCs408PaperBack('repair');
+      setCs408View('paper');
+      window.scrollTo({ top: 0, behavior: 'instant' });
+    } catch (e) { setError(e instanceof Error ? e.message : '408 修复卷加载失败'); }
+    finally { setCs408Busy(false); }
+  }
+  async function loadCs408History() {
+    setCs408HistoryLoading(true); setCs408View('history');
+    try {
+      const data = await request<{ items: Cs408HistoryItem[] }>('/api/cs408/history');
+      setCs408History(data.items);
+    } catch (e) { setError(e instanceof Error ? e.message : '408 试卷记录加载失败'); }
+    finally { setCs408HistoryLoading(false); }
+  }
+  async function loadCs408Metrics() {
+    setCs408MetricsLoading(true); setCs408View('metrics');
+    try {
+      setCs408Metrics(await request<Cs408Metrics>('/api/cs408/metrics'));
+    } catch (e) { setError(e instanceof Error ? e.message : '408 数据中心加载失败'); }
+    finally { setCs408MetricsLoading(false); }
+  }
+  async function openCs408PaperById(id: string, back: 'history' | 'metrics') {
+    setCs408Busy(true); setError('');
+    try {
+      const data = await request<Cs408Paper>(`/api/cs408/papers/${id}`);
+      setCs408Paper(data);
+      setCs408Answers(data.result ? Object.fromEntries(data.result.attempts.map(attempt => [attempt.question_id, attempt.answer_raw || ''])) : {});
+      setCs408PaperBack(back);
+      setCs408View('paper');
+      window.scrollTo({ top: 0, behavior: 'instant' });
+    } catch (e) { setError(e instanceof Error ? e.message : '408 试卷加载失败'); }
+    finally { setCs408Busy(false); }
+  }
+  async function loadCs408Wrong() {
+    setCs408Busy(true); setError('');
+    try {
+      const data = await request<{ items: Cs408WrongItem[] }>('/api/cs408/wrong-book');
+      setCs408Wrong(data.items);
+      setCs408View('wrong');
+      window.scrollTo({ top: 0, behavior: 'instant' });
+    } catch (e) { setError(e instanceof Error ? e.message : '408 错题本加载失败'); }
+    finally { setCs408Busy(false); }
+  }
+  async function submitCs408() {
+    if (!cs408Paper || cs408Busy) return;
+    setCs408Busy(true); setError('');
+    try {
+      const answers = cs408Paper.items.map(item => ({
+        question_id: item.question_id,
+        answer_raw: cs408Answers[item.question_id] || '',
+      }));
+      const data = await request<Cs408Paper>(`/api/cs408/papers/${cs408Paper.id}/submit`, { method: 'POST', body: { answers } });
+      setCs408Paper(data);
+      void loadCs408Years();
+      window.setTimeout(() => document.getElementById('cs408-result')?.scrollIntoView({ behavior: 'smooth' }), 60);
+    } catch (e) { setError(e instanceof Error ? e.message : '408 交卷失败'); }
+    finally { setCs408Busy(false); }
+  }
+  function setCs408Answer(questionId: string, value: string) {
+    setCs408Answers(current => ({ ...current, [questionId]: value }));
+  }
 
   return <div className="app-shell">
+    <MathBackdrop subject={subject} />
     <a className="skip-link" href="#main-content">跳到主要内容</a>
     {recentPreview && <div className="modal-backdrop no-print" role="dialog" aria-modal="true" aria-label="组卷详情" onClick={() => setRecentPreview(null)}><div className="preview-card" onClick={event => event.stopPropagation()}>
       <div className="preview-head"><div><span className="eyebrow">公开组卷预览</span><h2>{recentPreview.concepts?.map((node: any) => node.name).slice(0, 3).join(' · ') || '综合练习'}</h2><p>{recentPreview.mode === 'exam' ? '整卷模考' : '专项突破'} · {sourceLabel(recentPreview.source_mode)} · {recentPreview.items.length} 题 · {formatScore(recentPreview.total_score_x2)} 分</p></div><button className="preview-close" onClick={() => setRecentPreview(null)}>关闭</button></div>
@@ -510,6 +874,7 @@ export default function App() {
       <div className="preview-items">{recentPreview.items.map((item: any, index: number) => <article className="preview-item" key={item.question.id}>
         <div className="question-meta"><span className="question-number">{String(index + 1).padStart(2, '0')}</span><span className={`source-tag ${item.question.source}`}>{item.question.source === 'real' ? `${item.question.year || '历年'} 真题` : 'AI 原创'}</span><span>{qtypeLabel(item.question.qtype)}</span><span>{formatScore(item.score_x2)} 分</span></div>
         <div className="stem"><MathText text={item.question.stem_latex} /></div>
+        <QuestionFigures assets={item.question.figure_assets} />
         {item.question.options_json?.length ? <div className="preview-options">{item.question.options_json.map((option: any) => <div className="preview-option" key={option.label}><b>{option.label}</b><MathText text={option.latex} /></div>)}</div> : null}
       </article>)}</div>
     </div></div>}
@@ -539,14 +904,58 @@ export default function App() {
     {pdfStage && <div className="pdf-export-overlay"><div className="pdf-export-status">{pdfMessage}</div><div className="pdf-export-scroll"><PdfPaper paper={pdfStage.paper} includeAnswers={pdfStage.includeAnswers} /></div></div>}
     {confirming && <div className="modal-backdrop no-print" role="dialog" aria-modal="true" aria-label="确认组卷"><div className="confirm-card"><span className="eyebrow">生成前确认</span><h2>按这个配置出卷？</h2><dl><div><dt>知识块</dt><dd>{selectedNames.join('、')}</dd></div><div><dt>模式</dt><dd>{mode === 'exam' ? '整卷模考 · 易中难梯度' : '专项突破 · 同档集中练习'}</dd></div><div><dt>题源</dt><dd>{sourceOptions.find(s => s.value === source)?.label} · 共 {totalCount} 题{source === 'mixed' ? `（真题 ${mixedRealCount} / AI ${mixedAiCount}）` : ''}</dd></div><div><dt>题型</dt><dd>选择 {typeCounts.single_choice} · 填空 {typeCounts.fill_blank} · 解答 {typeCounts.free_response}</dd></div><div><dt>难度</dt><dd>{difficultyLabel(difficulty)}</dd></div></dl><p>{source === 'real' ? '试卷生成后会固定题序和题目版本，作答记录可回看。' : 'AI 出卷在后台进行，完成后会在右下角通知；期间你可以继续组下一张卷。'}</p><div className="modal-actions"><button onClick={() => setConfirming(false)}>返回修改</button><button className="primary" onClick={compose}>确认并生成</button></div></div></div>}
     <header className="topbar no-print">
-      <button className="brand" onClick={() => { setView('compose'); setResult(null); }}>
-        <span className="brand-mark">∑</span><span><strong>研数</strong><small>考研数学二 · 智能练习</small></span>
+      <button className="brand" onClick={() => { if (subject === 'cs408') setCs408View('papers'); else { setView('compose'); setResult(null); } }}>
+        <span className={`brand-mark ${subject === 'cs408' ? 'cs408-mark' : ''}`}>{subject === 'cs408' ? '408' : '∑'}</span><span><strong>题脉</strong><small>{subject === 'cs408' ? '考研 408 · 真题练习' : '考研数学二 · 智能练习'}</small></span>
       </button>
-      <nav aria-label="主导航"><button className={view === 'compose' ? 'active' : ''} aria-current={view === 'compose' ? 'page' : undefined} onClick={() => setView('compose')}>组卷</button><button className={view === 'agent' ? 'active' : ''} aria-current={view === 'agent' ? 'page' : undefined} onClick={() => setView('agent')}>学习助手</button><button className={view === 'wrong' ? 'active' : ''} aria-current={view === 'wrong' ? 'page' : undefined} onClick={loadWrong}>错题本</button><button className={view === 'papers' ? 'active' : ''} aria-current={view === 'papers' ? 'page' : undefined} onClick={loadMyPapers}>我的试卷</button><button className={view === 'metrics' ? 'active' : ''} aria-current={view === 'metrics' ? 'page' : undefined} onClick={loadMetrics}>数据中心</button><button onClick={openSettings}>模型设置</button></nav>
+      <div className="subject-switch" role="tablist" aria-label="科目切换">
+        <button role="tab" aria-selected={subject === 'math2'} className={subject === 'math2' ? 'active' : ''} onClick={() => switchSubject('math2')}>数学二</button>
+        <button role="tab" aria-selected={subject === 'cs408'} className={subject === 'cs408' ? 'active' : ''} onClick={() => switchSubject('cs408')}>408</button>
+      </div>
+      <nav aria-label="主导航">
+        {subject === 'math2' ? <>
+          <button className={view === 'compose' ? 'active' : ''} aria-current={view === 'compose' ? 'page' : undefined} onClick={() => setView('compose')}>自由练习</button>
+          <button className={view === 'examPapers' ? 'active' : ''} aria-current={view === 'examPapers' ? 'page' : undefined} onClick={() => { window.scrollTo({ top: 0, behavior: 'instant' }); void loadMathExamYears(); }}>真题试卷</button>
+          <button className={view === 'repair' ? 'active' : ''} aria-current={view === 'repair' ? 'page' : undefined} onClick={() => { void loadRepair(); setView('repair'); }}>今日修复</button>
+          <button className={view === 'wrong' ? 'active' : ''} aria-current={view === 'wrong' ? 'page' : undefined} onClick={loadWrong}>错题本</button>
+          <button className={view === 'papers' ? 'active' : ''} aria-current={view === 'papers' ? 'page' : undefined} onClick={loadMyPapers}>我的试卷</button>
+          <button className={view === 'metrics' ? 'active' : ''} aria-current={view === 'metrics' ? 'page' : undefined} onClick={loadMetrics}>数据中心</button>
+          <button className={view === 'agent' ? 'active' : ''} aria-current={view === 'agent' ? 'page' : undefined} onClick={() => setView('agent')}>学习助手</button>
+          <button onClick={openSettings}>模型设置</button>
+        </> : <>
+          <button className={cs408View === 'compose' ? 'active' : ''} aria-current={cs408View === 'compose' ? 'page' : undefined} onClick={() => { setCs408View('compose'); window.scrollTo({ top: 0, behavior: 'instant' }); }}>自由练习</button>
+          <button className={cs408View === 'repair' ? 'active' : ''} aria-current={cs408View === 'repair' ? 'page' : undefined} onClick={() => { setCs408View('repair'); window.scrollTo({ top: 0, behavior: 'instant' }); void loadCs408Repair(); }}>今日修复</button>
+          <button className={cs408View === 'papers' ? 'active' : ''} aria-current={cs408View === 'papers' ? 'page' : undefined} onClick={() => { setCs408View('papers'); window.scrollTo({ top: 0, behavior: 'instant' }); void loadCs408Years(); }}>真题试卷</button>
+          <button className={cs408View === 'history' ? 'active' : ''} aria-current={cs408View === 'history' ? 'page' : undefined} onClick={() => { window.scrollTo({ top: 0, behavior: 'instant' }); void loadCs408History(); }}>我的试卷</button>
+          <button className={cs408View === 'wrong' ? 'active' : ''} aria-current={cs408View === 'wrong' ? 'page' : undefined} onClick={loadCs408Wrong}>错题本</button>
+          <button className={cs408View === 'metrics' ? 'active' : ''} aria-current={cs408View === 'metrics' ? 'page' : undefined} onClick={() => { window.scrollTo({ top: 0, behavior: 'instant' }); void loadCs408Metrics(); }}>数据中心</button>
+          <button className={cs408View === 'agent' ? 'active' : ''} aria-current={cs408View === 'agent' ? 'page' : undefined} onClick={() => { setCs408View('agent'); window.scrollTo({ top: 0, behavior: 'instant' }); }}>学习助手</button>
+          <button onClick={openSettings}>模型设置</button>
+        </>}
+      </nav>
     </header>
     <main id="main-content" tabIndex={-1}>
       {error && <div className="error-banner no-print" role="alert">{error}<button onClick={() => setError('')}>知道了</button></div>}
+      {subject === 'math2' && <>
+      {view === 'repair' && <RepairPanel
+        cases={repairCases}
+        loading={repairLoading}
+        busy={busy}
+        date={repairDate}
+        backlogCount={repairBacklogCount}
+        aiConfigured={Boolean(aiSettings?.configured)}
+        onOpenSettings={openSettings}
+        onOpenWrong={loadWrong}
+        onStart={item => startRepair(item.question_id)}
+        onOpenPaper={openRepairPaper}
+        onReplace={item => replaceRepair(item.question_id)}
+        onOpenPractice={() => setView('compose')}
+        onRefresh={() => void loadRepair()}
+      />}
       {view === 'compose' && <>
+        <section className="intro no-print">
+          <h1>自由练习组卷</h1>
+          <p>想额外刷题时，再按知识点自由组卷；错题会自动进入「今日修复」。</p>
+        </section>
         {dailyQuestion && <DailyQuestionCard
           daily={dailyQuestion}
           answer={dailyAnswer}
@@ -566,9 +975,6 @@ export default function App() {
           onAiPromptChange={setDailyAiPrompt}
           onAiAsk={askDailyAi}
         />}
-        <section className="intro no-print">
-          <h1>按知识点组卷</h1>
-        </section>
         <div className="compose-layout no-print">
           <section className="panel knowledge-panel">
             <div className="section-heading"><span>01</span><div><h2>选择知识点</h2><p>支持多选，选择章节会包含其下全部考点。</p></div></div>
@@ -589,6 +995,7 @@ export default function App() {
             {!knowledge.length && <div className="empty-state">正在加载知识点…</div>}
           </section>
           <section className="panel settings-panel">
+            <div className="settings-scroll">
             <div className="section-heading"><span>02</span><div><h2>设定这张卷</h2><p>你可以随时调整。</p></div></div>
             <div className="field"><label>组卷模式</label><div className="segmented two"><button className={mode === 'exam' ? 'active' : ''} onClick={() => setMode('exam')}>整卷模考<small>易 → 中 → 难梯度</small></button><button className={mode === 'drill' ? 'active' : ''} onClick={() => setMode('drill')}>专项突破<small>同档集中练习</small></button></div></div>
             <div className="field"><label>题源</label><div className="source-options">{sourceOptions.map(item => <button key={item.value} className={source === item.value ? 'active' : ''} onClick={() => setSource(item.value)}><strong>{item.label}</strong><small>{item.value === 'real' ? item.note : item.value === 'mixed' ? `真题与 AI 各半，奇数时真题多 1 道（本卷 ${mixedRealCount} + ${mixedAiCount}）` : '后台生成约 10–60 秒，完成后右下角通知'}</small></button>)}</div></div>
@@ -596,22 +1003,29 @@ export default function App() {
             <div className="field"><label>题型与题量 <small>合计 {totalCount} / 30</small></label><div className="type-counts">{qtypeOptions.map(item => <div className="type-count-row" key={item.value}><span>{item.label}</span><div className="number-input compact"><button onClick={() => setTypeCount(item.value, typeCounts[item.value] - 1)}>−</button><input type="number" min={0} max={30} value={typeCounts[item.value]} onChange={e => setTypeCount(item.value, Number(e.target.value))} /><button onClick={() => setTypeCount(item.value, typeCounts[item.value] + 1)}>+</button></div></div>)}</div>{totalCount > 30 && <div className="field-error">题量合计不能超过 30。</div>}</div>
             <div className="field"><label>难度</label><div className="difficulty-row">{(['easy', 'medium', 'hard'] as Difficulty[]).map(d => <button key={d} className={difficulty === d ? 'active' : ''} onClick={() => setDifficulty(d)}>{difficultyLabel(d)}</button>)}</div></div>
             {!selected.length && <div className="compose-hint">请先在左侧选择知识点，才能生成试卷。</div>}
+            </div>
             <div className="summary"><span>{selected.length ? `已选 ${selected.length} 个知识块` : '尚未选择知识点'} · {totalCount} 题</span><button className="primary" disabled={busy || !selected.length || totalCount < 1 || totalCount > 30} onClick={askCompose}>{busy ? (source === 'real' ? '正在组卷…' : '正在加入队列…') : source === 'real' ? '生成试卷 →' : '加入出卷队列 →'}</button></div>
           </section>
         </div>
       </>}
+      {view === 'examPapers' && <MathYearList years={mathExamYears} loading={mathExamLoading} busy={busy} onOpen={openMathExamYear} />}
       {view === 'paper' && paper && <>
-        <div className="paper-toolbar no-print"><button className="back" onClick={() => setView(paperOrigin)}>← {paperOrigin === 'papers' ? '我的试卷' : '调整组卷'}</button></div>
+        <div className="paper-toolbar no-print"><button className="back" onClick={() => setView(paperOrigin === 'exams' ? 'examPapers' : paperOrigin)}>← {paperOrigin === 'papers' ? '我的试卷' : paperOrigin === 'repair' ? '今日修复' : paperOrigin === 'exams' ? '真题试卷' : '自由练习'}</button></div>
         <section className="paper-head">
           <span className="eyebrow">{paper.mode === 'exam' ? '整卷模考' : '专项突破'}</span>
           <h1>{paper.title || (paper.origin === 'variant' ? '错题仿真练习' : selectedNames.join(' · ')) || '数学二练习卷'}</h1>
           <p>{paper.items_json.length} 题 · 卷面 {formatScore(paper.total_score_x2)} 分 · {paper.actual_ratio.real} 道真题 / {paper.actual_ratio.ai} 道 AI 原创</p>
-          <div className="paper-note">{paper.mode === 'exam' ? '本卷难度按易 → 中 → 难梯度分布。' : '本卷按所选难度档集中练习。'} 分值按题库记录计算。</div>
-          {paper.items_json.some(item => item.question.score_source?.startsWith('derived')) && <div className="adjustment">分值说明：本卷分值按官方题型总分推导，不是官方逐题分值。</div>}
-          {paper.items_json.every(item => item.question.is_fixture) && <div className="adjustment">当前为本地契约样例数据：题目为开发用样例，不代表官方真题。</div>}
-          {paper.adjustments.map(a => <div className="adjustment no-print" key={a}>已调整：{a}</div>)}
+          <details className="paper-notes">
+            <summary>组卷说明{paper.adjustments.length ? ` · ${paper.adjustments.length} 条调整` : ''}</summary>
+            <div>
+              <p>{paper.mode === 'exam' ? '本卷难度按易 → 中 → 难梯度分布。' : '本卷按所选难度档集中练习。'} 分值按题库记录计算。</p>
+              {paper.items_json.some(item => item.question.score_source?.startsWith('derived')) && <p>分值说明：本卷分值按官方题型总分推导，不是官方逐题分值。</p>}
+              {paper.items_json.every(item => item.question.is_fixture) && <p>当前为本地契约样例数据：题目为开发用样例，不代表官方真题。</p>}
+              {paper.adjustments.map(a => <p key={a}>已调整：{a}</p>)}
+            </div>
+          </details>
         </section>
-        <div className="paper-progress no-print"><span>已作答 {answered} / {paper.items_json.length}</span><div><i style={{ width: `${answered / paper.items_json.length * 100}%` }} /></div><span className="timer">{String(Math.floor(elapsed / 60)).padStart(2, '0')}:{String(elapsed % 60).padStart(2, '0')}</span></div>
+        <div className="paper-progress no-print"><span>已作答 {answered} / {paper.items_json.length}</span><div><i style={{ width: `${answered / paper.items_json.length * 100}%` }} /></div><span className="timer">{String(Math.floor(elapsed / 60)).padStart(2, '0')}:{String(elapsed % 60).padStart(2, '0')}</span>{!result && <button className="primary small paper-submit-top" disabled={busy} onClick={submit}>{busy ? '正在判卷…' : '提交并判卷'}</button>}</div>
         <section className="question-list">{paper.items_json.map((item, index) => {
           const q = item.question, attempt = attemptMap.get(q.id);
           const reviewOpen = Boolean(expandedReviews[q.id]);
@@ -619,6 +1033,7 @@ export default function App() {
           return <article className={`question-card ${attempt ? (attempt.score_x2 === attempt.max_score_x2 ? 'correct' : 'incorrect') : ''}`} key={q.id}>
             <div className="question-meta"><span className="question-number">{String(index + 1).padStart(2, '0')}</span><span className={`source-tag ${q.is_fixture ? 'fixture' : q.source}`}>{q.is_fixture ? '本地契约样例 · 非真题' : q.source === 'real' ? `${q.year || '历年'} 真题 · 第 ${q.seq_label} 题` : 'AI 原创 · 已校验'}</span><span>{q.qtype === 'single_choice' ? '选择题' : q.qtype === 'fill_blank' ? '填空题' : '解答题'}</span><span>难度：{difficultyLabel(q.difficulty)}</span><span>{formatScore(item.score_x2)} 分</span></div>
             <div className="stem"><MathText text={q.stem_latex} /></div>
+            <QuestionFigures assets={q.figure_assets} />
             {q.sub_items_json?.map(sub => <div className="sub-item" key={sub.label}><strong>{sub.label}</strong><MathText text={sub.prompt_latex} /></div>)}
             {q.qtype === 'single_choice' && <div className="answer-options">{q.options_json?.map(option => {
               const correctLabel = attempt?.correct_answer?.trim().toUpperCase();
@@ -645,32 +1060,40 @@ export default function App() {
             {attempt && <div className="question-feedback"><strong>{attempt.grading_status === 'pending_review' ? '解答题待 rubric 模型复核' : attempt.score_x2 === attempt.max_score_x2 ? '回答正确' : '需要再看一眼'}</strong><span>{attempt.feedback || `得分 ${formatScore(attempt.score_x2)} / ${formatScore(attempt.max_score_x2)}`}</span></div>}
           </article>;
         })}</section>
-        {!result && <div className="submit-bar no-print"><div><strong>做完了吗？</strong><span>未作答的题按 0 分计入，解答题需后续模型复核。</span></div><button className="primary" disabled={busy} onClick={submit}>{busy ? '正在判卷…' : '提交并判卷'}</button></div>}
-        {result && <section className="grade-result no-print" id="grade-result"><span className="eyebrow">本次作答</span><h2>得分率 {result.score_rate_bp / 100}%</h2><p>得分 {formatScore(result.score_x2)} / {formatScore(result.max_score_x2)}。错题已自动加入错题本。</p><div className="source-score">{Object.entries(result.by_source).filter(([, v]) => v.max_score_x2 > 0).map(([key, value]) => <div key={key}><span>{key === 'real' ? '真题部分' : 'AI 原创部分'}</span><strong>{formatScore(value.score_x2)} / {formatScore(value.max_score_x2)}</strong></div>)}</div><div className="result-actions"><button onClick={loadWrong}>查看错题本</button><button className="primary" onClick={() => { setView('compose'); setResult(null); }}>再组一张卷</button></div></section>}
+        {result && <section className="grade-result no-print" id="grade-result"><span className="eyebrow">本次作答</span><h2>得分率 {result.score_rate_bp / 100}%</h2><p>得分 {formatScore(result.score_x2)} / {formatScore(result.max_score_x2)}。错题已自动加入错题本。</p><div className="source-score">{Object.entries(result.by_source).filter(([, v]) => v.max_score_x2 > 0).map(([key, value]) => <div key={key}><span>{key === 'real' ? '真题部分' : 'AI 原创部分'}</span><strong>{formatScore(value.score_x2)} / {formatScore(value.max_score_x2)}</strong></div>)}</div><div className="result-actions"><button onClick={async () => { await loadRepair(); setView('repair'); }}>开始修复 →</button><button onClick={loadWrong}>查看错题本</button><button onClick={() => { setView('compose'); setResult(null); }}>自由练习</button></div></section>}
       </>}
-      {view === 'wrong' && <section className="simple-page"><h1>错题本</h1>{wrongItems.length === 0 ? <div className="empty-card"><h2>暂时没有错题</h2><p>每日一题或试卷里答错的题会出现在这里。</p><button className="primary" onClick={() => setView('compose')}>去组一张卷</button></div> : <div className="wrong-list">{wrongItems.map(item => {
+      {view === 'wrong' && <section className="simple-page"><h1>错题本</h1>
+        {wrongItems.length > 0 && <div className="filter-bar">
+          <div className="filter-tabs">
+            <button className={wrongStatusFilter === 'all' ? 'active' : ''} onClick={() => setWrongStatusFilter('all')}>全部 <small>{wrongGroupCounts.all}</small></button>
+            <button className={wrongStatusFilter === 'needs_repair' ? 'active' : ''} onClick={() => setWrongStatusFilter('needs_repair')}>待修复 <small>{wrongGroupCounts.needs_repair}</small></button>
+            <button className={wrongStatusFilter === 'repairing' ? 'active' : ''} onClick={() => setWrongStatusFilter('repairing')}>修复中 <small>{wrongGroupCounts.repairing}</small></button>
+            <button className={wrongStatusFilter === 'mastered' ? 'active' : ''} onClick={() => setWrongStatusFilter('mastered')}>已修复 <small>{wrongGroupCounts.mastered}</small></button>
+          </div>
+          <div className="filter-controls">
+            <label>错因<select value={wrongCauseFilter} onChange={event => setWrongCauseFilter(event.target.value)}><option value="all">全部</option><option value="none">未诊断</option>{wrongCauses.map(cause => <option key={cause} value={cause}>{cause}</option>)}</select></label>
+            <label>来源<select value={wrongSourceFilter} onChange={event => setWrongSourceFilter(event.target.value)}><option value="all">全部</option><option value="real">真题</option><option value="ai">AI 原创</option></select></label>
+            <label>题型<select value={wrongTypeFilter} onChange={event => setWrongTypeFilter(event.target.value)}><option value="all">全部</option><option value="single_choice">选择题</option><option value="fill_blank">填空题</option><option value="free_response">解答题</option></select></label>
+            <label>年份<select value={wrongYearFilter} onChange={event => setWrongYearFilter(event.target.value)}><option value="all">全部</option>{wrongYears.map(year => <option key={year} value={year}>{year}</option>)}</select></label>
+            <label>修复轮次<select value={wrongPassFilter} onChange={event => setWrongPassFilter(event.target.value)}><option value="all">全部</option><option value="0">0 轮</option><option value="1-2">1–2 轮</option><option value="3-4">3–4 轮</option><option value="5">5 轮</option></select></label>
+            <label>知识点<select value={wrongKnowledgeFilter} onChange={event => setWrongKnowledgeFilter(event.target.value)}><option value="all">全部</option>{wrongKnowledge.map(node => <option key={node.code} value={node.code}>{node.name}</option>)}</select></label>
+            {wrongFiltersActive && <button className="filter-clear" onClick={() => { setWrongStatusFilter('all'); setWrongCauseFilter('all'); setWrongSourceFilter('all'); setWrongTypeFilter('all'); setWrongYearFilter('all'); setWrongPassFilter('all'); setWrongKnowledgeFilter('all'); }}>清除筛选</button>}
+            <span className="filter-result">显示 {filteredWrong.length} / {wrongItems.length}</span>
+          </div>
+        </div>}
+        {wrongItems.length === 0 ? <div className="empty-card"><h2>暂时没有错题</h2><p>每日一题或试卷里答错的题会出现在这里。</p><button className="primary" onClick={() => setView('compose')}>去组一张卷</button></div> : <div className="wrong-list">{filteredWrong.map(item => {
         const question = item.question, review = item.review, attempt = item.attempt;
         const daily: DailyWrongAnswer | null = item.daily_answer;
         const answerRaw = daily ? daily.answer_raw : attempt?.answer_raw;
         const reviewOpen = Boolean(expandedReviews[item.question_id]);
         const hasDetails = Boolean(review?.explanation) || Boolean(review?.solution_steps?.length);
-        const stats = item.variant_stats;
-        const selectedForVariant = selectedWrong.includes(item.question_id);
+        const repairState = item.repair;
+        const repairPasses = repairState?.repair_passes || 0;
+        const repairNextAt = repairState?.next_repair_at ? new Date(repairState.next_repair_at) : null;
         return <article className="panel wrong-card" id={`wrong-${item.question_id}`} tabIndex={-1} key={item.question_id}>
-          <div className="wrong-select-row">
-            <label className="wrong-select"><input type="checkbox" checked={selectedForVariant} onChange={() => toggleWrongSelection(item.question_id)} />选择本题做仿真练习</label>
-            {selectedForVariant && <div className="variant-count-control">
-              <span>生成仿真题</span>
-              <div className="number-input compact">
-                <button onClick={() => setVariantCount(item.question_id, variantCountFor(item.question_id) - 1)}>−</button>
-                <input type="number" min={3} max={10} value={variantCountFor(item.question_id)} onChange={event => setVariantCount(item.question_id, Number(event.target.value))} />
-                <button onClick={() => setVariantCount(item.question_id, variantCountFor(item.question_id) + 1)}>+</button>
-              </div>
-              <small>每题至少 3 道</small>
-            </div>}
-          </div>
-          <div className="question-meta">{!daily && <span className="source-tag real">错题 · 掌握度 {item.mastery}/5</span>}<span className={`source-tag ${question?.source === 'ai' ? 'ai' : 'real'}`}>{question?.source === 'ai' ? 'AI 原创' : `${question?.year || '历年'} 真题 · 第 ${question?.seq_label} 题`}</span><span>{qtypeLabel(question?.qtype)}</span></div>
+          <div className="question-meta">{!daily && <span className="source-tag real">错题 · 修复 {repairPasses}/5 轮</span>}<span className={`source-tag ${question?.source === 'ai' ? 'ai' : 'real'}`}>{question?.source === 'ai' ? 'AI 原创' : `${question?.year || '历年'} 真题 · 第 ${question?.seq_label} 题`}</span><span>{qtypeLabel(question?.qtype)}</span></div>
           <div className="stem"><MathText text={question?.stem_latex || ''} /></div>
+          <QuestionFigures assets={question?.figure_assets} />
           {question?.sub_items_json?.map((sub: any) => <div className="sub-item" key={sub.label}><strong>{sub.label}</strong><MathText text={sub.prompt_latex} /></div>)}
           {question?.qtype === 'single_choice' && question.options_json?.length ? <div className="answer-options">{question.options_json.map((option: any) => {
             const correct = review?.correct_answer?.trim().toUpperCase() === option.label;
@@ -696,37 +1119,66 @@ export default function App() {
             </div>}
           </div>}
           <div className="mastery-box">
-            <div className="mastery-row"><strong>仿真练习掌握度</strong><span>{stats?.total ? (stats.pending ? '仿真卷待完成' : `${stats.correct}/${stats.total} 正确 · ${(stats.rate_bp / 100).toFixed(1).replace('.0', '')}%`) : '还未生成仿真题'}</span></div>
-            {stats?.total ? <div className="mastery-bar"><i style={{ width: `${Math.min(100, (stats.rate_bp || 0) / 100)}%` }} /></div> : null}
-            {stats?.mastered && <div className="mastered-row"><span>已完全掌握，可以移出错题本。</span><button className="mastery-delete" onClick={() => deleteWrong(item.question_id)} disabled={busy}>移出错题本</button></div>}
+            <div className="mastery-row"><strong>修复进度</strong><span>{repairPasses}/5 轮 · {repairState?.repair_variants_done || 0}/15 题</span></div>
+            <div className="mastery-bar"><i style={{ width: `${Math.min(100, repairPasses * 20)}%` }} /></div>
+            {repairPasses >= 5
+              ? <div className="mastered-row"><span>5 轮全部通过，可以移出错题本。</span><button className="mastery-delete" onClick={() => deleteWrong(item.question_id)} disabled={busy}>移出错题本</button></div>
+              : repairNextAt && repairNextAt > new Date()
+                ? <p className="muted">本轮已通过，下一轮 {repairNextAt.toLocaleDateString('zh-CN')} 后可再练。</p>
+                : null}
+          </div>
+          <div className="wrong-repair-row">
+            <div><strong>AI 修复</strong><span>{repairState?.diagnosis?.summary || '让 AI 诊断这道题的错因，再生成 3 道定向变式。'}</span></div>
+            {repairState?.status === 'ready' && repairState.paper_id
+              ? <button className="primary small" disabled={busy} onClick={() => openMyPaper(repairState.paper_id)}>打开修复卷 →</button>
+              : repairState?.status === 'generating'
+                ? <button className="primary small" disabled>AI 生成中…</button>
+                : repairNextAt && repairNextAt > new Date()
+                  ? <button className="primary small" disabled>下一轮待复习</button>
+                  : <button className="primary small" disabled={busy || repairPasses >= 5} onClick={() => startRepair(item.question_id)}>{repairPasses ? '开始下一轮 →' : '让 AI 修复 →'}</button>}
           </div>
           <p className="muted">下次复习：{new Date(item.next_review_at).toLocaleDateString('zh-CN')}</p>
         </article>;
-      })}</div>}
-        {wrongItems.length > 0 && <div className="variant-bar no-print">
-          <div><strong>错题仿真练习</strong><span>已选 {selectedWrong.length} 道错题 · 共 {variantTotal} 道仿真题（每题至少 3 道）</span>{variantTotal > 30 && <em>合计不能超过 30 道，请减少错题或每题数量</em>}</div>
-          <button className="primary" disabled={busy || !selectedWrong.length || variantTotal > 30} onClick={composeVariants}>生成仿真练习卷 →</button>
-        </div>}
+      })}{!filteredWrong.length && <div className="filter-empty">没有符合当前筛选的错题。</div>}</div>}
       </section>}
       {view === 'agent' && <AgentPanel aiConfigured={Boolean(aiSettings?.configured)} onOpenSettings={openSettings} onOpenPaper={data => { setPaperOrigin('papers'); setPaper(data); setResult(data.result || null); setAnswers(data.result ? Object.fromEntries(data.result.attempts.map(attempt => [attempt.question_id, attempt.answer_raw || ''])) : {}); setView('paper'); }} onQueueJob={job => { if (startedJobs.current.has(job.id)) return; setJobs(list => [...list, job]); setJobsOpen(true); }} />}
       {view === 'papers' && <section className="simple-page">
         <span className="eyebrow">你的组卷与作答记录</span><h1>我的试卷</h1>
         <p>点击试卷继续作答；需要留档时点「保存为 PDF」。未交卷保存空白卷，已交卷可选择带解析或空白卷。</p>
+        <div className="filter-bar">
+          <div className="filter-tabs">
+            <button className={paperStatusFilter === 'all' ? 'active' : ''} onClick={() => setPaperStatusFilter('all')}>全部 <small>{paperStatusCounts.all}</small></button>
+            <button className={paperStatusFilter === 'draft' ? 'active' : ''} onClick={() => setPaperStatusFilter('draft')}>待完成 <small>{paperStatusCounts.draft}</small></button>
+            <button className={paperStatusFilter === 'submitted' ? 'active' : ''} onClick={() => setPaperStatusFilter('submitted')}>已交卷 <small>{paperStatusCounts.submitted}</small></button>
+          </div>
+          <div className="filter-controls">
+            <label>类型<select value={paperOriginFilter} onChange={event => setPaperOriginFilter(event.target.value)}><option value="all">全部</option><option value="free">自由练习</option><option value="exam">真题整卷</option><option value="repair">错题修复</option><option value="variant">错题仿真</option></select></label>
+            <label>模式<select value={paperModeFilter} onChange={event => setPaperModeFilter(event.target.value)}><option value="all">全部</option><option value="exam">整卷模考</option><option value="drill">专项突破</option></select></label>
+            <label>题源<select value={paperSourceFilter} onChange={event => setPaperSourceFilter(event.target.value)}><option value="all">全部</option><option value="real">真题</option><option value="ai">AI 仿真</option><option value="mixed">混合</option></select></label>
+            <label>年份<select value={paperYearFilter} onChange={event => setPaperYearFilter(event.target.value)}><option value="all">全部</option>{paperYears.map(year => <option key={year} value={year}>{year}</option>)}</select></label>
+            <label>时间<select value={paperTimeFilter} onChange={event => setPaperTimeFilter(event.target.value)}><option value="all">全部</option><option value="7">最近 7 天</option><option value="30">最近 30 天</option><option value="older">更早</option></select></label>
+            {paperFiltersActive && <button className="filter-clear" onClick={() => { setPaperStatusFilter('all'); setPaperOriginFilter('all'); setPaperModeFilter('all'); setPaperSourceFilter('all'); setPaperYearFilter('all'); setPaperTimeFilter('all'); }}>清除筛选</button>}
+            <span className="filter-result">显示 {filteredPapers.length} / {myPapers.length}</span>
+          </div>
+        </div>
         {myPapers.length === 0 ? <div className="empty-card"><h2>还没有组卷记录</h2><p>生成第一张试卷后，这里会保存你的待做与已完成记录。</p><button className="primary" onClick={() => setView('compose')}>去组一张卷</button></div> : <div className="paper-history">
-          {myPapers.map(paper => <div className="paper-history-item" key={paper.id}>
-            <button className="panel paper-history-row" onClick={() => openMyPaper(paper.id)}>
+          {filteredPapers.map(paper => <article className="paper-history-item panel" key={paper.id}>
+            <button className="paper-history-main" onClick={() => openMyPaper(paper.id)}>
               <div className="paper-history-top">
                 <span className={`source-tag ${paper.status === 'submitted' ? 'real' : 'fixture'}`}>{paper.status === 'submitted' ? '已交卷' : '待完成'}</span>
                 <span className="source-tag">{paper.mode === 'exam' ? '整卷模考' : '专项突破'}</span>
-                <span className={`source-tag ${paper.origin === 'variant' ? 'ai' : ''}`}>{paper.origin === 'variant' ? '错题仿真' : sourceLabel(paper.source_mode)}</span>
+                <span className={`source-tag ${paperOriginKey(paper) !== 'free' ? 'ai' : ''}`}>{paperOriginLabel(paper)}</span><span className={`source-tag ${paper.source_mode === 'real' ? 'real' : ''}`}>{sourceLabel(paper.source_mode)}</span>
                 <span className="paper-history-date">{new Date(paper.created_at).toLocaleString('zh-CN')}</span>
               </div>
               <h2>{paper.title}</h2>
               <p>{paper.questions} 题 · 卷面 {formatScore(paper.total_score_x2)} 分{paper.status === 'submitted' && paper.score_x2 != null ? ` · 得分 ${formatScore(paper.score_x2)} / ${formatScore(paper.max_score_x2)} · 得分率 ${paper.score_rate_bp / 100}%` : ' · 继续作答'}</p>
-              <span className="paper-history-action">{paper.status === 'submitted' ? '查看解析 →' : '继续作答 →'}</span>
             </button>
-            <button className="paper-pdf-button" onClick={() => paper.status === 'submitted' ? openPdfOptions(paper.id) : saveDraftPdfDirect(paper)}>保存为 PDF</button>
-          </div>)}
+            <div className="paper-history-actions">
+              <button className="paper-history-open" onClick={() => openMyPaper(paper.id)}>{paper.status === 'submitted' ? '查看解析 →' : '继续作答 →'}</button>
+              <button className="paper-pdf-button" onClick={() => paper.status === 'submitted' ? openPdfOptions(paper.id) : saveDraftPdfDirect(paper)}>保存为 PDF</button>
+            </div>
+          </article>)}
+          {!filteredPapers.length && <div className="filter-empty">没有符合当前筛选的试卷。</div>}
         </div>}</section>}
       {view === 'metrics' && <section className="simple-page">
         <span className="eyebrow">公开、可复核的质量数据</span><h1>数据中心</h1>
@@ -742,6 +1194,43 @@ export default function App() {
         </div>
         <div className="panel trend-panel"><h2>作答趋势</h2>{trends.length ? trends.map(t => <div className="trend-row" key={t.date}><span>{t.date}</span><div><i style={{ width: `${Math.min(100, t.attempts * 12)}%` }} /></div><strong>{t.attempts}</strong></div>) : <div className="empty-state">数据积累中，趋势图将在产生作答后展示。</div>}</div>
       </section>}
+      </>}
+      {subject === 'cs408' && cs408View === 'compose' && <Cs408Compose busy={cs408Busy} aiConfigured={Boolean(aiSettings?.configured)} onOpenSettings={openSettings} onStart={startCs408Practice} />}
+      {subject === 'cs408' && cs408View === 'repair' && <Cs408RepairPanel
+        cases={cs408RepairCases}
+        loading={cs408RepairLoading}
+        busy={cs408Busy}
+        date={cs408RepairDate}
+        backlogCount={cs408RepairBacklog}
+        completedCount={cs408RepairCompleted}
+        aiConfigured={Boolean(aiSettings?.configured)}
+        onOpenSettings={openSettings}
+        onStart={startCs408Repair}
+        onOpenPaper={openCs408RepairPaper}
+        onRefresh={() => void loadCs408Repair()}
+        onOpenPractice={() => setCs408View('compose')}
+        onOpenWrong={loadCs408Wrong}
+      />}
+      {subject === 'cs408' && cs408View === 'papers' && <Cs408YearList
+        years={cs408Years}
+        loading={cs408Loading}
+        busy={cs408Busy}
+        onOpen={openCs408Year}
+      />}
+      {subject === 'cs408' && cs408View === 'paper' && cs408Paper && <Cs408PaperView
+        paper={cs408Paper}
+        answers={cs408Answers}
+        busy={cs408Busy}
+        onAnswer={setCs408Answer}
+        onSubmit={submitCs408}
+        backLabel={cs408PaperBack === 'compose' ? '408 自由练习' : cs408PaperBack === 'repair' ? '408 今日修复' : cs408PaperBack === 'history' ? '408 我的试卷' : cs408PaperBack === 'metrics' ? '408 数据中心' : '408 历年真题'}
+        onBack={() => { setCs408View(cs408PaperBack); window.scrollTo({ top: 0, behavior: 'instant' }); }}
+        onWrong={loadCs408Wrong}
+      />}
+      {subject === 'cs408' && cs408View === 'history' && <Cs408History items={cs408History} loading={cs408HistoryLoading} onOpen={id => openCs408PaperById(id, 'history')} onPractice={() => setCs408View('compose')} />}
+      {subject === 'cs408' && cs408View === 'wrong' && <Cs408WrongBook items={cs408Wrong} loading={cs408Busy} />}
+      {subject === 'cs408' && cs408View === 'metrics' && <Cs408Dashboard metrics={cs408Metrics} loading={cs408MetricsLoading} onOpen={id => openCs408PaperById(id, 'metrics')} onRefresh={() => void loadCs408Metrics()} />}
+      {subject === 'cs408' && cs408View === 'agent' && <Cs408AgentPanel aiConfigured={Boolean(aiSettings?.configured)} onOpenSettings={openSettings} />}
     </main>
     {jobs.length > 0 && <aside className="job-dock no-print" aria-live="polite">
       <button className="job-dock-head" onClick={() => setJobsOpen(open => !open)}>
@@ -777,6 +1266,6 @@ export default function App() {
         <p className="job-dock-note">同时生成 2 张，其余自动排队；期间可继续组卷。</p>
       </div>}
     </aside>}
-    <footer className="no-print">研数 · 考研数学二 <button aria-expanded={showMathHelp} onClick={() => setShowMathHelp(v => !v)}>公式输入说明</button>{showMathHelp && <span>可以输入 1/2、x^2，或用两个 $ 符号括住行内 LaTeX 公式。</span>}<span className="device-note">匿名设备：{deviceId().slice(0, 12)}…</span></footer>
+    <footer className="no-print">题脉 · {subject === 'cs408' ? '考研 408' : '考研数学二'} {subject === 'math2' && <button aria-expanded={showMathHelp} onClick={() => setShowMathHelp(v => !v)}>公式输入说明</button>}{subject === 'math2' && showMathHelp && <span>可以输入 1/2、x^2，或用两个 $ 符号括住行内 LaTeX 公式。</span>}<span className="device-note">匿名设备：{deviceId().slice(0, 12)}…</span></footer>
   </div>;
 }

@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { MathText } from './MathText';
+import { QuestionFigures } from './QuestionFigures';
 import { difficultyLabel } from '../lib/api';
 import type { DailyAnswerImage, DailyQuestionState, Qtype } from '../types';
 
@@ -39,14 +41,33 @@ export function DailyQuestionCard({
   const judgmentClass = retryable ? 'retryable' : result?.correct === true ? 'correct' : result?.correct === false ? 'incorrect' : '';
   const chosenLabel = submitted ? result?.answer_raw : answer;
   const modelNeeded = Boolean(answerImage) || question.qtype === 'free_response';
+  const [expanded, setExpanded] = useState(false);
+  if (!expanded) {
+    const compactStatus = submitted ? (result?.correct === true ? '今日已答对' : result?.correct === false ? '今日已答错' : '今日已作答') : '今日练习';
+    return <section className="daily-card daily-card-compact">
+      <div className="daily-compact-head">
+        <div>
+          <span className="eyebrow">{compactStatus}</span>
+          <h2>每日一题</h2>
+          <p>{daily.date} · {question.source === 'real' ? `${question.year || '历年'} 真题` : 'AI 原创'} · 难度：{difficultyLabel(question.difficulty)}</p>
+        </div>
+        <button className="primary small" onClick={() => setExpanded(true)}>{submitted ? '查看今日一题' : '开始今日一题'}</button>
+      </div>
+      <p className="daily-compact-stem"><MathText text={question.stem_latex} /></p>
+    </section>;
+  }
   return <section className="daily-card">
-    <header className="daily-card-head"><h2>每日一题</h2><time dateTime={daily.date}>{daily.date}</time></header>
+    <header className="daily-card-head">
+      <h2>每日一题</h2>
+      <div className="daily-card-actions"><time dateTime={daily.date}>{daily.date}</time><button className="text-button" onClick={() => setExpanded(false)}>收起</button></div>
+    </header>
     <article className={`daily-question ${judgmentClass}`}>
       <div className="question-meta">
         <span className={`source-tag ${question.source}`}>{question.source === 'real' ? `${question.year || '历年'} 真题` : 'AI 原创'}</span>
         <span>难度：{difficultyLabel(question.difficulty)}</span>
       </div>
       <div className="stem"><MathText text={question.stem_latex} /></div>
+      <QuestionFigures assets={question.figure_assets} />
       {question.sub_items_json?.map(sub => <div className="sub-item" key={sub.label}><strong>{sub.label}</strong><MathText text={sub.prompt_latex} /></div>)}
       {!submitted && <p>{instructions[question.qtype]}</p>}
       {question.qtype === 'single_choice' && <div className="answer-options">{question.options_json?.map(option => {

@@ -2,6 +2,7 @@ import { AppError, fail, assertDeviceId, uuid, nowIso } from './model.mjs';
 import { composePaper } from './compose.mjs';
 import { gradeSubmission, submissionSummary, publicQuestion, reviewQuestion } from './grade.mjs';
 import { listWrongBook, todayReview, similarQuestions, variantMastery } from './review.mjs';
+import { findRepairCase, listRepairCases, getDailyRepair, replaceDailyRepair, repairCaseView, syncRepairForPaper } from './repair.mjs';
 import { currentMetrics, metricTrends } from './metrics.mjs';
 import { checkQuota } from './runtime.mjs';
 import { advancePaperJob, advanceVariantJob, createPaperJob, createVariantJob, discardJob, ensureJobCanStart } from './generate.mjs';
@@ -9,9 +10,22 @@ import { publicAiSettings, saveAiSettings, settingsFor } from './ai-settings.mjs
 import { getAgentState, saveProfile, savePreferences, saveAgentSummary, clearAgentSummary, updateStudyPlan } from './agent-store.mjs';
 import { advanceAgentTask, confirmAgentTask, createAgentTask, publicAgentTask } from './agent.mjs';
 import { dailyJudgment, getDailyQuestion, generateDailyAiReply, submitDailyAnswer } from './daily-question.mjs';
+import { clearCs408Agent, cs408AgentReply, publicCs408Agent, saveCs408Profile } from './cs408-agent.mjs';
+import { createMathExamPaper, listMathExamYears } from './math-exams.mjs';
+import { advanceCs408PaperJob, createCs408PaperJob } from './cs408-generate.mjs';
+import { createCs408Paper, createCs408PracticePaper, cs408Metrics, cs408NodeQuestionCount, cs408PaperView, ensureCs408RepairCases, gradeCs408Submission, listCs408History, listCs408RepairCases, listCs408WrongBook, listCs408Years } from './cs408.mjs';
 
 function json(value, status = 200) { return Response.json(value, { status }); }
 function paperView(paper) { const { device_id, ...rest } = paper; return rest; }
+function readableRepairTitle(paper, runtime) {
+  const sourceId = paper.config_json?.variant_items?.[0]?.question_id
+    || paper.items_json?.[0]?.question?.generator_meta_json?.variant_of;
+  const source = sourceId ? runtime.questions.find(question => question.id === sourceId) : null;
+  if (source?.year) return `AI 修复 · ${source.year} 真题 · 第 ${source.seq_label} 题`;
+  if (source?.generator_meta_json?.exam_point_raw) return `AI 修复 · ${source.generator_meta_json.exam_point_raw}`;
+  if (paper.title && !/[$\\]/.test(paper.title)) return paper.title;
+  return 'AI 修复练习';
+}
 function jobView(job) {
   return {
     id: job.id, status: job.status, stage: job.stage, progress: job.progress,
@@ -21,6 +35,8 @@ function jobView(job) {
     verified_count: job.verified_count || 0,
     reused_count: job.reused_count || 0,
     error: job.error || null,
+    diagnosis: job.diagnosis || null,
+    repair_case_id: job.config?.repair_case_id || null,
     paper: job.paper ? paperView(job.paper) : null,
   };
 }
@@ -133,6 +149,14 @@ function dailyQuestionView(runtime, deviceId, daily = getDailyQuestion(runtime, 
     ai_messages: daily.record.ai_messages || [],
   };
 }
+function repairDailyPayload(deviceId, runtime) {
+  const daily = getDailyRepair(deviceId, runtime);
+  return {
+    date: daily.date, backlog_count: daily.backlog_count,
+    items: daily.items.map(item => ({ ...item, question: item.question ? publicQuestion(item.question) : null })),
+  };
+}
+
 export function application(runtime) {
   return async request => {
     const url = new URL(request.url);
@@ -151,6 +175,115 @@ export function application(runtime) {
     if (request.method !== 'GET') requireSession(runtime, request, deviceId);
     if (path === '/api/knowledge' && request.method === 'GET') {
       return json({ items: runtime.knowledge.map(n => ({ id: n.id, parent_id: n.parent_id, code: n.code, name: n.name, level: n.level, aliases: n.aliases })) });
+    }
+    if (path === '/api/cs408/knowledge' && request.method === 'GET') {
+      return json({ items: runtime.cs408Knowledge.map(n => {
+        const single = cs408NodeQuestionCount(runtime, n, 'single_choice');
+        const free = cs408NodeQuestionCount(runtime, n, 'free_response');
+        return {
+          id: n.id, parent_id: n.parent_id, code: n.code, name: n.name, level: n.level, aliases: n.aliases,
+          question_count: single + free, single_choice_count: single, free_response_count: free,
+        };
+      }) });
+    }
+    if (path === '/api/cs408/papers' && request.method === 'GET') {
+      return json({ items: listCs408Years(runtime, deviceId) });
+    }
+    if (path === '/api/cs408/history' && request.method === 'GET') {
+      return json({ items: listCs408History(runtime, deviceId) });
+    }
+    if (path === '/api/cs408/metrics' && request.method === 'GET') {
+      return json(cs408Metrics(runtime, deviceId));
+    }
+    if (path === '/api/cs408/agent' && request.method === 'GET') {
+      return json(publicCs408Agent(runtime, deviceId));
+    }
+    if (path === '/api/cs408/agent/profile' && request.method === 'POST') {
+      return json({ profile: saveCs408Profile(runtime, deviceId, input) });
+    }
+    if (path === '/api/cs408/agent/chat' && request.method === 'POST') {
+      if (typeof input.message !== 'string') fail('invalid_input');
+      const response = await asyncIdempotent(runtime, request, deviceId, 'cs408-agent-chat', input, () => cs408AgentReply(runtime, deviceId, input));
+      return json(response);
+    }
+    if (path === '/api/cs408/agent/clear' && request.method === 'POST') {
+      return json(clearCs408Agent(runtime, deviceId));
+    }
+    if (path === '/api/cs408/papers' && request.method === 'POST') {
+      if (!Number.isInteger(input.year)) fail('invalid_input');
+      const response = idempotent(runtime, request, deviceId, `cs408-create:${input.year}:${input.restart === true}`, input, () => {
+        const paper = createCs408Paper(runtime, deviceId, input.year, input.restart === true);
+        return cs408PaperView(paper, runtime);
+      });
+      return json(response, 201);
+    }
+    if (path === '/api/cs408/practice/ai' && request.method === 'POST') {
+      const result = idempotent(runtime, request, deviceId, 'cs408-practice-ai', input, () => {
+        const job = createCs408PaperJob(runtime, input, deviceId);
+        ensureJobCanStart(runtime, job);
+        if (!checkQuota(runtime, deviceId, 2)) {
+          discardJob(runtime, job);
+          fail('quota_exceeded', 429);
+        }
+        return { job_id: job.id, ...jobView(job) };
+      });
+      return json(result, 202);
+    }
+    if (path === '/api/cs408/practice' && request.method === 'POST') {
+      const response = idempotent(runtime, request, deviceId, 'cs408-practice', input, () => {
+        const paper = createCs408PracticePaper(runtime, deviceId, input.node_ids, input.count, {
+          type_counts: input.type_counts,
+          mode: input.mode,
+          year_from: input.year_from,
+          year_to: input.year_to,
+          exclude_done: input.exclude_done,
+        });
+        return cs408PaperView(paper, runtime);
+      });
+      return json(response, 201);
+    }
+    match = path.match(/^\/api\/cs408\/papers\/([0-9a-fA-F-]{36})$/);
+    if (match && request.method === 'GET') {
+      const paper = runtime.papers.find(p => p.id === match[1].toLowerCase() && p.device_id === deviceId && p.subject === 'cs408');
+      if (!paper) fail('not_found', 404);
+      return json(cs408PaperView(paper, runtime));
+    }
+    match = path.match(/^\/api\/cs408\/papers\/([0-9a-fA-F-]{36})\/submit$/);
+    if (match && request.method === 'POST') {
+      const paper = runtime.papers.find(p => p.id === match[1].toLowerCase() && p.device_id === deviceId && p.subject === 'cs408');
+      if (!paper) fail('not_found', 404);
+      if (!Array.isArray(input.answers) || input.answers.length > 100) fail('invalid_input');
+      for (const answer of input.answers) {
+        if (!answer || typeof answer.question_id !== 'string' || typeof (answer.answer_raw ?? '') !== 'string') fail('invalid_input');
+        if (String(answer.answer_raw || '').length > 20000) fail('payload_too_large', 413);
+      }
+      const result = idempotent(runtime, request, deviceId, `cs408-submit:${paper.id}`, input, () => gradeCs408Submission(paper, { ...input, device_id: deviceId }, runtime));
+      return json(result);
+    }
+    if (path === '/api/cs408/wrong-book' && request.method === 'GET') {
+      return json({ items: listCs408WrongBook(deviceId, runtime) });
+    }
+    if (path === '/api/cs408/repair/today' && request.method === 'GET') {
+      return json(listCs408RepairCases(deviceId, runtime));
+    }
+    match = path.match(/^\/api\/cs408\/repair\/questions\/([A-Za-z0-9_-]{1,64})\/generate$/);
+    if (match && request.method === 'POST') {
+      const questionId = match[1].toLowerCase();
+      const question = runtime.questions.find(item => item.id === questionId && item.subject === 'cs408');
+      if (!question) fail('not_found', 404);
+      const repair = ensureCs408RepairCases(deviceId, runtime).find(item => item.question_id === questionId);
+      if (!repair) fail('not_found', 404);
+      if ((repair.repair_passes || 0) >= 5) fail('repair_completed', 409);
+      const result = idempotent(runtime, request, deviceId, `cs408-repair:${questionId}`, input, () => {
+        const job = createVariantJob(runtime, { items: [{ question_id: questionId, count: 3 }], repair_case_id: repair.id }, deviceId);
+        ensureJobCanStart(runtime, job);
+        if (!checkQuota(runtime, deviceId, 2)) {
+          discardJob(runtime, job);
+          fail('quota_exceeded', 429);
+        }
+        return { job_id: job.id, repair_case_id: repair.id, ...jobView(job) };
+      });
+      return json(result, 202);
     }
     if (path === '/api/ai-settings' && request.method === 'GET') {
       return json(publicAiSettings(settingsFor(runtime, deviceId)));
@@ -250,6 +383,17 @@ export function application(runtime) {
         return { term: text, node_id: n.id, level: n.level, expand_to: n.level === 3 ? 'leaf' : 'subtree', leaf_ids: leafIds, candidate_count: runtime.questions.filter(q => q.knowledge.some(k => k.code === n.code)).length };
       }) });
     }
+    if (path === '/api/math/exam-years' && request.method === 'GET') {
+      return json({ items: listMathExamYears(runtime, deviceId) });
+    }
+    if (path === '/api/math/exam-papers' && request.method === 'POST') {
+      if (!Number.isInteger(input.year)) fail('invalid_input');
+      const response = idempotent(runtime, request, deviceId, `math-exam:${input.year}:${input.restart === true}`, input, () => {
+        const paper = createMathExamPaper(runtime, deviceId, input.year, input.restart === true);
+        return paperView(paper);
+      });
+      return json(response, 201);
+    }
     if (path === '/api/papers/compose' && request.method === 'POST') {
       if (input.source_mode !== 'real') {
         const queued = idempotent(runtime, request, deviceId, 'compose', input, () => {
@@ -284,7 +428,7 @@ export function application(runtime) {
     }
     if (path === '/api/papers' && request.method === 'GET') {
       const items = runtime.papers
-        .filter(paper => paper.device_id === deviceId)
+        .filter(paper => paper.device_id === deviceId && (paper.subject || 'math2') === 'math2')
         .slice()
         .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
         .map(paper => {
@@ -295,14 +439,18 @@ export function application(runtime) {
           const maxScore = paper.items_json.reduce((sum, item) => sum + item.score_x2, 0);
           const origin = paper.config_json?.origin || paper.origin || null;
           const sourceCount = paper.config_json?.variant_items?.length || 0;
+          const years = [...new Set(paper.items_json.map(item => item.question?.year).filter(Boolean))].sort((a, b) => b - a);
           return {
             id: paper.id, mode: paper.mode, source_mode: paper.source_mode, status: paper.status,
-            created_at: paper.created_at, submitted_at: paper.submitted_at, origin,
+            created_at: paper.created_at, submitted_at: paper.submitted_at, origin, years,
             questions: paper.items_json.length, total_score_x2: paper.total_score_x2,
             actual_ratio: paper.actual_ratio, concepts,
-            title: origin === 'variant'
-              ? `错题仿真练习${sourceCount ? `（${sourceCount} 道错题）` : ''}`
-              : concepts.length ? `${concepts.slice(0, 3).join(' · ')}${concepts.length > 3 ? ' 等' : ''}` : '综合练习',
+            title: origin === 'repair'
+              ? readableRepairTitle(paper, runtime)
+              : origin === 'variant'
+                ? `错题仿真练习${sourceCount ? `（${sourceCount} 道错题）` : ''}`
+                : origin === 'math_exam' ? paper.title
+                : concepts.length ? `${concepts.slice(0, 3).join(' · ')}${concepts.length > 3 ? ' 等' : ''}` : '综合练习',
             score_x2: summary?.score_x2 ?? null, max_score_x2: summary?.max_score_x2 ?? maxScore,
             score_rate_bp: summary?.score_rate_bp ?? null,
           };
@@ -311,7 +459,7 @@ export function application(runtime) {
     }
     match = path.match(/^\/api\/papers\/([0-9a-fA-F-]{36})$/);
     if (match && request.method === 'GET') {
-      const paper = runtime.papers.find(p => p.id === match[1].toLowerCase() && p.device_id === deviceId);
+      const paper = runtime.papers.find(p => p.id === match[1].toLowerCase() && p.device_id === deviceId && (p.subject || 'math2') === 'math2');
       if (!paper) fail('not_found', 404);
       const concepts = (paper.config_json?.concept_node_ids || [])
         .map(id => runtime.knowledge.find(node => node.id === id)?.name)
@@ -321,18 +469,22 @@ export function application(runtime) {
       return json({
         id: paper.id, paper_instance_id: paper.id, mode: paper.mode, source_mode: paper.source_mode,
         status: paper.status, items: paper.items_json, items_json: paper.items_json, origin,
+        years: [...new Set(paper.items_json.map(item => item.question?.year).filter(Boolean))].sort((a, b) => b - a),
         total_score_x2: paper.total_score_x2, actual_ratio: paper.actual_ratio,
         adjustments: paper.adjustments, dataset: paper.dataset, created_at: paper.created_at,
         submitted_at: paper.submitted_at, concepts,
-        title: origin === 'variant'
-          ? `错题仿真练习${sourceCount ? `（${sourceCount} 道错题）` : ''}`
-          : concepts.length ? `${concepts.slice(0, 3).join(' · ')}${concepts.length > 3 ? ' 等' : ''}` : null,
+        title: origin === 'repair'
+          ? readableRepairTitle(paper, runtime)
+          : origin === 'variant'
+            ? `错题仿真练习${sourceCount ? `（${sourceCount} 道错题）` : ''}`
+            : origin === 'math_exam' ? paper.title
+            : concepts.length ? `${concepts.slice(0, 3).join(' · ')}${concepts.length > 3 ? ' 等' : ''}` : null,
         result: paper.status === 'submitted' ? paperResult(paper, runtime) : null,
       });
     }
     match = path.match(/^\/api\/papers\/([0-9a-fA-F-]{36})\/submit$/);
     if (match && request.method === 'POST') {
-      const paper = runtime.papers.find(p => p.id === match[1].toLowerCase() && p.device_id === deviceId);
+      const paper = runtime.papers.find(p => p.id === match[1].toLowerCase() && p.device_id === deviceId && (p.subject || 'math2') === 'math2');
       if (!paper) fail('not_found', 404);
       if (!Array.isArray(input.answers) || input.answers.length > 100) fail('invalid_input');
       for (const answer of input.answers) {
@@ -341,26 +493,42 @@ export function application(runtime) {
       }
       const result = idempotent(runtime, request, deviceId, `submit:${paper.id}`, input, () => {
         gradeSubmission(paper, { ...input, device_id: deviceId }, runtime);
+        syncRepairForPaper(runtime, paper);
         return { paper_instance_id: paper.id, ...paperResult(paper, runtime) };
       });
       return json(result);
     }
     if (path === '/api/wrong-book' && request.method === 'GET') {
-      return json({ items: listWrongBook(deviceId, runtime).map(item => ({
-        ...item,
-        question: item.question ? (item.daily_answer ? publicDailyQuestion(item.question) : publicQuestion(item.question)) : null,
-        attempt: item.attempt ? publicAttempt(item.attempt) : null,
-        review: item.question ? reviewQuestion(item.question) : null,
-        variant_stats: item.question ? variantMastery(item, deviceId, runtime) : null,
-      })) });
+      return json({ items: listWrongBook(deviceId, runtime).map(item => {
+        const repair = item.question ? findRepairCase(deviceId, runtime, item.question_id) : null;
+        const repairView = repair ? repairCaseView(repair, runtime, deviceId) : null;
+        const knowledge = (item.question?.knowledge || []).map(node => {
+          const known = runtime.knowledge.find(candidate => candidate.code === node.code);
+          return { code: node.code, name: known?.name || node.code };
+        });
+        return {
+          ...item, knowledge,
+          question: item.question ? (item.daily_answer ? publicDailyQuestion(item.question) : publicQuestion(item.question)) : null,
+          attempt: item.attempt ? publicAttempt(item.attempt) : null,
+          review: item.question ? reviewQuestion(item.question) : null,
+          variant_stats: item.question ? variantMastery(item, deviceId, runtime) : null,
+          repair: repairView ? {
+            id: repairView.id, status: repairView.status, diagnosis: repairView.diagnosis,
+            repair_passes: repairView.repair_passes, repair_variants_done: repairView.repair_variants_done,
+            next_repair_at: repairView.next_repair_at, paper_id: repairView.paper_id,
+            selection_count: repairView.selection_count, last_selected_at: repairView.last_selected_at,
+          } : null,
+        };
+      }) });
     }
     match = path.match(/^\/api\/wrong-book\/([0-9a-fA-F-]{36})$/);
     if (match && request.method === 'DELETE') {
       const wrong = runtime.wrongBook.find(item => item.device_id === deviceId && item.question_id === match[1].toLowerCase());
       if (!wrong) fail('not_found', 404);
-      const stats = variantMastery(wrong, deviceId, runtime);
-      if (!stats.mastered) fail('not_mastered', 409);
+      const repair = findRepairCase(deviceId, runtime, wrong.question_id);
+      if (!repair || (repair.repair_passes || 0) < 5) fail('not_mastered', 409);
       runtime.wrongBook.splice(runtime.wrongBook.indexOf(wrong), 1);
+      runtime.repairCases = (runtime.repairCases || []).filter(item => !(item.device_id === deviceId && item.question_id === wrong.question_id));
       return json({ deleted: true, question_id: wrong.question_id });
     }
     if (path === '/api/review/today' && request.method === 'GET') {
@@ -398,7 +566,7 @@ export function application(runtime) {
     }
     match = path.match(/^\/api\/metrics\/papers\/([0-9a-fA-F-]{36})$/);
     if (match && request.method === 'GET') {
-      const paper = runtime.papers.find(p => p.id === match[1].toLowerCase());
+      const paper = runtime.papers.find(p => p.id === match[1].toLowerCase() && (p.subject || 'math2') === 'math2');
       if (!paper) fail('not_found', 404);
       const concepts = (paper.config_json?.concept_node_ids || [])
         .map(id => runtime.knowledge.find(node => node.id === id))
@@ -415,6 +583,41 @@ export function application(runtime) {
         note: '公开预览仅展示题干与选项，不含答案。',
       });
     }
+    if (path === '/api/repair/cases' && request.method === 'GET') {
+      return json({ items: listRepairCases(deviceId, runtime).map(item => ({
+        ...item,
+        question: item.question ? publicQuestion(item.question) : null,
+      })) });
+    }
+    if (path === '/api/repair/today' && request.method === 'GET') {
+      return json(repairDailyPayload(deviceId, runtime));
+    }
+    if (path === '/api/repair/today/replace' && request.method === 'POST') {
+      if (typeof input.question_id !== 'string') fail('invalid_input');
+      const replaced = replaceDailyRepair(deviceId, runtime, input.question_id.toLowerCase());
+      if (replaced === null) fail('not_found', 404);
+      if (replaced === false) fail('repair_no_candidate', 409);
+      return json(repairDailyPayload(deviceId, runtime));
+    }
+    match = path.match(/^\/api\/repair\/questions\/([0-9a-fA-F-]{36})\/generate$/);
+    if (match && request.method === 'POST') {
+      const questionId = match[1].toLowerCase();
+      const repair = findRepairCase(deviceId, runtime, questionId);
+      if (!repair) fail('not_found', 404);
+      const result = idempotent(runtime, request, deviceId, `repair:${questionId}`, input, () => {
+        const job = createVariantJob(runtime, {
+          items: [{ question_id: questionId, count: 3 }],
+          repair_case_id: repair.id,
+        }, deviceId);
+        ensureJobCanStart(runtime, job);
+        if (!checkQuota(runtime, deviceId, 2)) {
+          discardJob(runtime, job);
+          fail('quota_exceeded', 429);
+        }
+        return { job_id: job.id, repair_case_id: repair.id, ...jobView(job) };
+      });
+      return json(result, 202);
+    }
     if (path === '/api/variants' && request.method === 'POST') {
       const result = idempotent(runtime, request, deviceId, 'variant', input, () => {
         const job = createVariantJob(runtime, input, deviceId);
@@ -429,9 +632,11 @@ export function application(runtime) {
     }
     match = path.match(/^\/api\/jobs\/([0-9a-fA-F-]{36})(?:\/step)?$/);
     if (match && request.method === 'POST') {
-      const job = runtime.jobs.find(j => j.id === match[1].toLowerCase() && j.device_id === deviceId && (j.kind === 'paper' || j.kind === 'variant'));
+      const job = runtime.jobs.find(j => j.id === match[1].toLowerCase() && j.device_id === deviceId && (j.kind === 'paper' || j.kind === 'variant' || j.kind === 'cs408_paper'));
       if (!job) fail('not_found', 404);
-      const updated = job.kind === 'variant' ? await advanceVariantJob(runtime, job) : await advancePaperJob(runtime, job);
+      const updated = job.kind === 'variant' ? await advanceVariantJob(runtime, job)
+        : job.kind === 'cs408_paper' ? await advanceCs408PaperJob(runtime, job)
+        : await advancePaperJob(runtime, job);
       return json(jobView(updated));
     }
     if (match && request.method === 'GET') {

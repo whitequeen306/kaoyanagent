@@ -30,6 +30,17 @@ function withDb(file, work) {
         device_id TEXT NOT NULL, question_id TEXT NOT NULL, payload TEXT NOT NULL,
         PRIMARY KEY (device_id, question_id)
       );
+      CREATE TABLE IF NOT EXISTS repair_cases (
+        id TEXT PRIMARY KEY, device_id TEXT NOT NULL, question_id TEXT NOT NULL, payload TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS repair_cases_device ON repair_cases (device_id);
+      CREATE TABLE IF NOT EXISTS repair_daily (
+        device_id TEXT NOT NULL, date TEXT NOT NULL, payload TEXT NOT NULL,
+        PRIMARY KEY (device_id, date)
+      );
+      CREATE TABLE IF NOT EXISTS repair_sampling (
+        device_id TEXT PRIMARY KEY, payload TEXT NOT NULL
+      );
       CREATE TABLE IF NOT EXISTS reports (id TEXT PRIMARY KEY, payload TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS device_sessions (device_id TEXT PRIMARY KEY, payload TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS ai_settings (device_id TEXT PRIMARY KEY, base_url TEXT NOT NULL, api_key TEXT NOT NULL, model TEXT NOT NULL, payload TEXT NOT NULL);
@@ -57,6 +68,11 @@ export function createPersistence(runtime, file) {
         runtime.papers = db.prepare('SELECT payload FROM papers').all().map(row => parse(row.payload, null)).filter(Boolean);
         runtime.attempts = db.prepare('SELECT payload FROM attempts').all().map(row => parse(row.payload, null)).filter(Boolean);
         runtime.wrongBook = db.prepare('SELECT payload FROM wrong_book').all().map(row => parse(row.payload, null)).filter(Boolean);
+        runtime.repairCases = db.prepare('SELECT payload FROM repair_cases').all().map(row => parse(row.payload, null)).filter(Boolean);
+        const repairDaily = db.prepare('SELECT payload FROM repair_daily').all().map(row => parse(row.payload, null)).filter(Boolean);
+        runtime.repairDaily = new Map(repairDaily.map(record => [`${record.device_id}:${record.date}`, record]));
+        const repairSampling = db.prepare('SELECT payload FROM repair_sampling').all().map(row => parse(row.payload, null)).filter(Boolean);
+        runtime.repairSampling = new Map(repairSampling.map(record => [record.device_id, record]));
         runtime.reports = db.prepare('SELECT payload FROM reports').all().map(row => parse(row.payload, null)).filter(Boolean);
         runtime.deviceSessions = new Map(db.prepare('SELECT device_id, payload FROM device_sessions').all()
           .map(row => [row.device_id, parse(row.payload, null) || {}]));
@@ -90,7 +106,7 @@ export function createPersistence(runtime, file) {
       withDb(file, db => {
         db.exec('BEGIN IMMEDIATE');
         try {
-          db.exec('DELETE FROM generated_questions; DELETE FROM papers; DELETE FROM attempts; DELETE FROM wrong_book; DELETE FROM reports; DELETE FROM device_sessions; DELETE FROM ai_settings; DELETE FROM usage; DELETE FROM meta; DELETE FROM agent_states; DELETE FROM daily_questions;');
+          db.exec('DELETE FROM generated_questions; DELETE FROM papers; DELETE FROM attempts; DELETE FROM wrong_book; DELETE FROM repair_cases; DELETE FROM repair_daily; DELETE FROM repair_sampling; DELETE FROM reports; DELETE FROM device_sessions; DELETE FROM ai_settings; DELETE FROM usage; DELETE FROM meta; DELETE FROM agent_states; DELETE FROM daily_questions;');
           const insertQuestion = db.prepare('INSERT INTO generated_questions (id, payload) VALUES (?, ?)');
           for (const question of runtime.questions.filter(item => !baseQuestionIds.has(item.id))) {
             insertQuestion.run(question.id, JSON.stringify(question));
@@ -107,6 +123,12 @@ export function createPersistence(runtime, file) {
           for (const wrong of runtime.wrongBook) {
             insertWrong.run(wrong.device_id, wrong.question_id, JSON.stringify(wrong));
           }
+          const insertRepair = db.prepare('INSERT INTO repair_cases (id, device_id, question_id, payload) VALUES (?, ?, ?, ?)');
+          for (const repair of runtime.repairCases || []) insertRepair.run(repair.id, repair.device_id, repair.question_id, JSON.stringify(repair));
+          const insertRepairDaily = db.prepare('INSERT INTO repair_daily (device_id, date, payload) VALUES (?, ?, ?)');
+          for (const record of runtime.repairDaily?.values() || []) insertRepairDaily.run(record.device_id, record.date, JSON.stringify(record));
+          const insertRepairSampling = db.prepare('INSERT INTO repair_sampling (device_id, payload) VALUES (?, ?)');
+          for (const record of runtime.repairSampling?.values() || []) insertRepairSampling.run(record.device_id, JSON.stringify(record));
           const insertReport = db.prepare('INSERT INTO reports (id, payload) VALUES (?, ?)');
           for (const report of runtime.reports) insertReport.run(report.id, JSON.stringify(report));
           const insertSession = db.prepare('INSERT INTO device_sessions (device_id, payload) VALUES (?, ?)');

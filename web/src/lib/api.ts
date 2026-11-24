@@ -12,6 +12,9 @@ const messages: Record<string, string> = {
   state_conflict: '当前每日题状态已变化，请刷新后重试。',
   invalid_input: '提交的内容不完整或格式不正确。',
   not_found: '找不到这张试卷或这道题，可能已过期。',
+  repair_completed: '这道错题已经完成 5 轮修复，可以移出错题本。',
+  repair_not_due: '这一轮修复还没到复习时间，请按提示等待下一轮。',
+  repair_no_candidate: '当前没有可替换的错题。',
   not_mastered: '这套仿真题还没有全部答对，掌握度达到 100% 后才能移出错题本。',
   ai_variant_type_mismatch: '仿真题题型与原错题不一致，请重试。',
   llm_not_configured: '无法连接模型，请确认已配置模型',
@@ -43,6 +46,7 @@ export async function request<T>(path: string, options: { method?: string; body?
   const token = method === 'GET' ? null : await sessionToken();
   const response = await fetch(apiEndpoint(path), {
     method,
+    cache: 'no-store',
     headers: {
       'x-device-id': deviceId(),
       ...(token ? { 'x-device-token': token } : {}),

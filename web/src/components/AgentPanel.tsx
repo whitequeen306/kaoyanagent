@@ -58,8 +58,11 @@ export function AgentPanel({ aiConfigured, onOpenSettings, onOpenPaper, onQueueJ
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [summaryOpen, setSummaryOpen] = useState(false);
-  const [profileOpen, setProfileOpen] = useState(true);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [jumpRequest, setJumpRequest] = useState<{ taskId: string; nonce: number } | null>(null);
+  const conversationRef = useRef<HTMLDivElement>(null);
+  const messageRefs = useRef<Array<HTMLDivElement | null>>([]);
   const resumedTasks = useRef(new Set<string>());
 
   async function loadState() {
@@ -80,6 +83,34 @@ export function AgentPanel({ aiConfigured, onOpenSettings, onOpenPaper, onQueueJ
     if (!conversationId) return;
     request<any>(`/api/agent/conversations/${conversationId}`).then(data => setMessages(data.messages || [])).catch(() => {});
   }, [conversationId]);
+  useEffect(() => {
+    if (!jumpRequest) return;
+    const task = tasks.find((item: any) => item.id === jumpRequest.taskId)
+      || state?.tasks?.find((item: any) => item.id === jumpRequest.taskId);
+    if (!task) { setJumpRequest(null); return; }
+    if (conversationId && task.conversation_id !== conversationId) return;
+    const goal = String(task.goal || '').trim();
+    const createdAt = Date.parse(task.created_at || '') || 0;
+    let target = -1;
+    let bestDelta = Infinity;
+    messages.forEach((message: any, index: number) => {
+      if (message.role !== 'user' || String(message.content || '').trim() !== goal) return;
+      const delta = Math.abs((Date.parse(message.created_at || '') || 0) - createdAt);
+      if (delta < bestDelta) { bestDelta = delta; target = index; }
+    });
+    if (target < 0) return;
+    const container = conversationRef.current;
+    const element = messageRefs.current[target];
+    if (!container || !element) return;
+    const top = element.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop - 10;
+    container.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+    setJumpRequest(null);
+  }, [jumpRequest, messages, conversationId, tasks, state]);
+  function selectTask(task: any) {
+    setSelectedTaskId(task.id);
+    setConversationId(task.conversation_id);
+    setJumpRequest({ taskId: task.id, nonce: Date.now() });
+  }
   useEffect(() => {
     const resumable = tasks.find((task: any) => ['queued', 'waiting_async'].includes(task.status));
     if (!resumable || busy || resumedTasks.current.has(resumable.id)) return;
@@ -123,6 +154,7 @@ export function AgentPanel({ aiConfigured, onOpenSettings, onOpenPaper, onQueueJ
       resumedTasks.current.add(task.id);
       setConversationId(task.conversation_id);
       setSelectedTaskId(task.id);
+      setJumpRequest({ taskId: task.id, nonce: Date.now() });
       setTasks(current => [task, ...current]);
       setGoal('');
       const conversation = await request<any>(`/api/agent/conversations/${task.conversation_id}`);
@@ -176,6 +208,7 @@ export function AgentPanel({ aiConfigured, onOpenSettings, onOpenPaper, onQueueJ
       <h1>学习助手</h1>
       <p>告诉我你的目标、时间和薄弱点。我会结合你的档案、错题和试卷记录，给出下一步，并在你确认后执行。</p>
     </div>
+    {error && <div className="error-banner" role="alert">{error}<button onClick={() => setError('')}>知道了</button></div>}
     <div className="agent-layout">
       <aside className="agent-sidebar">
         <section className="panel agent-profile-card">
@@ -196,14 +229,14 @@ export function AgentPanel({ aiConfigured, onOpenSettings, onOpenPaper, onQueueJ
           {summaryOpen && <><div className="agent-summary-text">{state?.agent_summary?.text ? <MathText text={state.agent_summary.text} /> : '暂无总结，完成几次学习任务后会逐步形成。'}</div><button className="text-button" onClick={clearSummary}>清除推断</button></>}
         </section>
         {state?.plans?.length ? <section className="panel agent-plans"><h2>学习计划</h2>{state.plans.map((plan: any) => <div className="agent-plan" key={plan.id}><div className="agent-plan-head"><strong>{plan.title}</strong>{plan.status === 'active' ? <button className="text-button" onClick={() => completePlan(plan.id)}>标记完成</button> : null}</div><span>{plan.items.length} 项 · {plan.status === 'active' ? '进行中' : plan.status === 'completed' ? '已完成' : '已归档'}</span>{plan.items.slice(0, 3).map((item: any, index: number) => <p key={index}>{item.title}{item.minutes ? ` · ${item.minutes} 分钟` : ''}</p>)}</div>)}</section> : null}
-        {state?.tasks?.length ? <section className="panel agent-history"><h2>最近任务</h2>{state.tasks.slice(0, 5).map((task: any) => <button key={task.id} className={`agent-history-item ${activeTask?.id === task.id ? 'active' : ''}`} onClick={() => { setSelectedTaskId(task.id); setConversationId(task.conversation_id); }}><span>{task.goal}</span><small>{task.stage}</small></button>)}</section> : null}
+        {state?.tasks?.length ? <section className="panel agent-history"><h2>最近任务</h2>{state.tasks.slice(0, 5).map((task: any) => <button key={task.id} className={`agent-history-item ${activeTask?.id === task.id ? 'active' : ''}`} onClick={() => selectTask(task)}><span>{task.goal}</span><small>{task.stage}</small></button>)}</section> : null}
       </aside>
       <section className="panel agent-workspace">
         {!aiConfigured && <div className="agent-notice"><span>使用 Agent 前需要配置模型服务。</span><button onClick={onOpenSettings}>去配置模型</button></div>}
         <div className="agent-suggestions"><button onClick={() => setGoal('根据我的错题和最近试卷，帮我安排今天的复习')}>安排今天的复习</button><button onClick={() => setGoal('帮我看看最近的错题，找最该补的知识点')}>找出最该补的知识点</button><button onClick={() => setGoal('根据我的情况生成一份适合的练习卷')}>生成适合的练习卷</button></div>
-        <div className="agent-conversation">
+        <div className="agent-conversation" ref={conversationRef}>
           {messages.length === 0 && <div className="agent-empty"><strong>从一句目标开始</strong><p>例如：我今天有 1 小时，数学二想补积分，帮我安排。</p></div>}
-          {messages.map((message, index) => <div className={`agent-message ${message.role}`} key={`${message.created_at || ''}-${index}`}>
+          {messages.map((message, index) => <div className={`agent-message ${message.role}`} key={`${message.created_at || ''}-${index}`} ref={element => { messageRefs.current[index] = element; }}>
             <div className="agent-avatar">{message.role === 'user' ? '你' : '研'}</div>
             <div className="agent-message-body">
               <div className="agent-message-name">{message.role === 'user' ? '你' : '学习助手'}</div>
@@ -219,14 +252,15 @@ export function AgentPanel({ aiConfigured, onOpenSettings, onOpenPaper, onQueueJ
             {!activeTask.steps?.length && running ? <div className="agent-thinking-line"><ThinkingDots /><span>正在理解你的目标并规划下一步…</span></div> : null}
           </div>}
           {busy && !running && <div className="agent-thinking-line"><ThinkingDots /><span>正在继续处理…</span></div>}
-          {activeTask?.status === 'waiting_user' && activeTask.result?.requires_confirmation && <div className="agent-action-bar agent-confirm-bar"><span>助手需要你确认下一步</span><div><button className="primary small" onClick={() => confirmTask(activeTask.id, true)} disabled={busy}>确认执行</button><button onClick={() => confirmTask(activeTask.id, false)} disabled={busy}>暂不执行</button></div></div>}
           {['failed', 'degraded'].includes(activeTask?.status) && !hasAssistantReply && <div className="agent-error-note"><MathText text={activeTask.result?.reply || '学习助手暂时无法完成，请重试。'} /></div>}
           {activeTask?.status === 'cancelled' && <div className="agent-note">已取消本次操作，没有执行任何写入。</div>}
           {activeTask?.result?.artifacts?.length ? <div className="agent-action-bar artifact-actions">{activeTask.result.artifacts.map((artifact: any, index: number) => <button key={index} className="primary small" onClick={() => openArtifact(artifact)}>{artifact.type === 'paper' ? '打开试卷' : artifact.type === 'job' ? '查看出卷任务' : '查看计划'}</button>)}</div> : null}
         </div>
+        {activeTask?.status === 'waiting_user' && activeTask.result?.requires_confirmation && <div className="agent-pending">
+          <div className="agent-action-bar agent-confirm-bar"><span>助手需要你确认下一步</span><div><button className="primary small" onClick={() => confirmTask(activeTask.id, true)} disabled={busy}>确认执行</button><button onClick={() => confirmTask(activeTask.id, false)} disabled={busy}>暂不执行</button></div></div>
+        </div>}
         <form className="agent-input" onSubmit={event => { event.preventDefault(); startGoal(); }}><textarea value={goal} onChange={e => setGoal(e.target.value)} placeholder="告诉助手你的目标、时间或薄弱点…" rows={3} /><div><span>会先读取你的档案和偏好，必要时调用工具。</span><button className="primary" disabled={busy}>{busy ? '执行中…' : '发送给学习助手'}</button></div></form>
       </section>
     </div>
-    {error && <div className="error-banner">{error}<button onClick={() => setError('')}>知道了</button></div>}
   </section>;
 }

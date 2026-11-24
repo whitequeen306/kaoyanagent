@@ -16,12 +16,13 @@ try {
 import { application, errorResponse } from '../functions/routes.mjs';
 import { createLocalRuntime } from '../functions/runtime.mjs';
 const runtime = createLocalRuntime();
-const { createPersistence } = process.env.LOCAL_DATABASE_URL
-  ? await import('./persist-postgres.mjs')
-  : await import('./persist.mjs');
-const persistence = createPersistence(runtime, process.env.LOCAL_DATABASE_URL || resolve(root, 'data', 'kaoyan.db'));
+const useSqlite = process.env.USE_SQLITE === '1' || !process.env.LOCAL_DATABASE_URL;
+const { createPersistence } = useSqlite
+  ? await import('./persist.mjs')
+  : await import('./persist-postgres.mjs');
+const persistence = createPersistence(runtime, useSqlite ? resolve(root, 'data', 'kaoyan.db') : process.env.LOCAL_DATABASE_URL);
 await persistence.load();
-console.log(`Local storage: ${process.env.LOCAL_DATABASE_URL ? 'PostgreSQL' : 'SQLite'}`);
+console.log(`Local storage: ${useSqlite ? 'SQLite' : 'PostgreSQL'}`);
 const handle = application(runtime);
 const host = process.env.HOST || '127.0.0.1';
 const port = Number(process.env.PORT || 8000);
@@ -59,9 +60,11 @@ const server = http.createServer(async (req, res) => {
   } catch (error) {
     response = errorResponse(error);
   } finally {
-    if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) || runtime.dailyQuestionsDirty) {
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) || runtime.dailyQuestionsDirty || runtime.repairDailyDirty || runtime.repairSamplingDirty) {
       await persistence.save();
       runtime.dailyQuestionsDirty = false;
+      runtime.repairDailyDirty = false;
+      runtime.repairSamplingDirty = false;
     }
   }
   const headers = new Headers(response.headers);
