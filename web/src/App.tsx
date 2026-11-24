@@ -88,6 +88,9 @@ export default function App() {
   const [difficulty, setDifficulty] = useState<Difficulty>('medium');
   const [paper, setPaper] = useState<Paper | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [confirmedLatex, setConfirmedLatex] = useState<Record<string, string>>({});
+  const [recognizing, setRecognizing] = useState<Record<string, boolean>>({});
+  const [recognitionNotes, setRecognitionNotes] = useState<Record<string, string>>({});
   const [result, setResult] = useState<GradeResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -339,7 +342,7 @@ export default function App() {
       }
       const data = await request<Paper>('/api/papers/compose', { method: 'POST', body });
       setPaperOrigin('compose');
-      setPaper(data); setAnswers({}); setResult(null); setExpandedReviews({}); setElapsed(0); setView('paper');
+      setPaper(data); setAnswers({}); setConfirmedLatex({}); setRecognitionNotes({}); setResult(null); setExpandedReviews({}); setElapsed(0); setView('paper');
     } catch (e) { setError(e instanceof Error ? e.message : '组卷失败'); }
     finally { setBusy(false); }
   }
@@ -411,7 +414,7 @@ export default function App() {
       return;
     }
     setPaperOrigin((task.paper as any).config_json?.origin === 'repair' ? 'repair' : 'compose');
-    setPaper(task.paper); setAnswers({}); setResult(null); setExpandedReviews({}); setElapsed(0); setView('paper');
+    setPaper(task.paper); setAnswers({}); setConfirmedLatex({}); setRecognitionNotes({}); setResult(null); setExpandedReviews({}); setElapsed(0); setView('paper');
     setJobs(list => list.filter(item => item.id !== task.id));
   }
   function dismissJob(id: string) {
@@ -430,13 +433,44 @@ export default function App() {
     setBusy(true); setError('');
     try {
       const data = await request<GradeResult>(`/api/papers/${paper.id}/submit`, { method: 'POST', body: {
-        answers: paper.items_json.map(item => ({ question_id: item.question.id, answer_raw: answers[item.question.id] || '', duration_sec: elapsed })),
+        answers: paper.items_json.map(item => ({
+          question_id: item.question.id,
+          answer_raw: answers[item.question.id] || '',
+          confirmed_latex: confirmedLatex[item.question.id] || null,
+          duration_sec: elapsed,
+        })),
       } });
       setResult(data);
       if (paperOrigin === 'exams') void loadMathExamYears(false);
       setTimeout(() => document.getElementById('grade-result')?.scrollIntoView({ behavior: 'smooth' }), 50);
     } catch (e) { setError(e instanceof Error ? e.message : '判卷失败'); }
     finally { setBusy(false); }
+  }
+  async function recognizeHandwriting(questionId: string, file: File) {
+    if (!aiSettings?.configured) { openSettings(); return; }
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) { setError('只支持 PNG、JPG 或 WebP 图片。'); return; }
+    if (!file.size || file.size > 4 * 1024 * 1024) { setError('图片需小于 4 MB。'); return; }
+    setRecognizing(current => ({ ...current, [questionId]: true }));
+    setError('');
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('图片读取失败'));
+        reader.onerror = () => reject(new Error('图片读取失败'));
+        reader.readAsDataURL(file);
+      });
+      const asset = await request<{ image_asset_id: string }>('/api/assets', { method: 'POST', body: { mime_type: file.type, data_url: dataUrl } });
+      const result = await request<{ recognized_latex: string; confidence: number; needs_confirmation: boolean }>('/api/recognition', {
+        method: 'POST', body: { image_asset_id: asset.image_asset_id, question_id: questionId },
+      });
+      setAnswers(current => ({ ...current, [questionId]: result.recognized_latex }));
+      setConfirmedLatex(current => ({ ...current, [questionId]: result.recognized_latex }));
+      setRecognitionNotes(current => ({ ...current, [questionId]: `识别置信度 ${result.confidence}%${result.needs_confirmation ? '，请核对后再交卷' : ''}` }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '手写识别失败');
+    } finally {
+      setRecognizing(current => ({ ...current, [questionId]: false }));
+    }
   }
   function selectDailyImage(file: File) {
     if (dailyBusy) return;
@@ -659,11 +693,11 @@ export default function App() {
       const data = await request<Paper>(`/api/papers/${id}`);
       setPaper(data);
       if (data.result) {
-        setAnswers(Object.fromEntries(data.result.attempts.map(attempt => [attempt.question_id, attempt.answer_raw || ''])));
+        setAnswers(Object.fromEntries(data.result.attempts.map(attempt => [attempt.question_id, attempt.answer_raw || '']))); setConfirmedLatex({}); setRecognitionNotes({});
         setResult(data.result);
       } else {
         const saved = localStorage.getItem(`kaoyan-answers-${data.id}`);
-        setAnswers(saved ? JSON.parse(saved) : {});
+        setAnswers(saved ? JSON.parse(saved) : {}); setConfirmedLatex({}); setRecognitionNotes({});
         setResult(null);
       }
       setExpandedReviews({});
@@ -696,11 +730,11 @@ export default function App() {
       const data = await request<Paper>(`/api/papers/${created.id}`);
       setPaper(data);
       if (data.result) {
-        setAnswers(Object.fromEntries(data.result.attempts.map(attempt => [attempt.question_id, attempt.answer_raw || ''])));
+        setAnswers(Object.fromEntries(data.result.attempts.map(attempt => [attempt.question_id, attempt.answer_raw || '']))); setConfirmedLatex({}); setRecognitionNotes({});
         setResult(data.result);
       } else {
         const saved = localStorage.getItem(`kaoyan-answers-${data.id}`);
-        setAnswers(saved ? JSON.parse(saved) : {});
+        setAnswers(saved ? JSON.parse(saved) : {}); setConfirmedLatex({}); setRecognitionNotes({});
         setResult(null);
       }
       setExpandedReviews({});
@@ -1044,7 +1078,7 @@ export default function App() {
               </button>;
             })}</div>}
             {q.qtype === 'fill_blank' && <input className="blank-answer" disabled={Boolean(attempt)} value={answers[q.id] || ''} onChange={e => setAnswers(a => ({ ...a, [q.id]: e.target.value }))} placeholder="填写答案，如 1 或 e^x" />}
-            {q.qtype === 'free_response' && <div className="solution-input"><label className="upload-label">上传手写解答<input type="file" accept="image/png,image/jpeg" onChange={e => { const file = e.target.files?.[0]; if (file) setAnswers(a => ({ ...a, [q.id]: `待识别图片：${file.name}` })); }} /></label><textarea disabled={Boolean(attempt)} value={answers[q.id] || ''} onChange={e => setAnswers(a => ({ ...a, [q.id]: e.target.value }))} placeholder="手写识别将在正式后端接入；当前可在此输入或粘贴识别稿。" rows={4} /></div>}
+            {q.qtype === 'free_response' && <div className="solution-input"><label className="upload-label">{recognizing[q.id] ? '正在识别手写解答…' : '上传手写解答'}<input type="file" accept="image/png,image/jpeg,image/webp" disabled={recognizing[q.id] || Boolean(attempt)} onChange={e => { const file = e.target.files?.[0]; if (file) void recognizeHandwriting(q.id, file); }} /></label><textarea disabled={Boolean(attempt)} value={answers[q.id] || ''} onChange={e => { setAnswers(a => ({ ...a, [q.id]: e.target.value })); setConfirmedLatex(c => ({ ...c, [q.id]: e.target.value })); }} placeholder="上传手写照片后自动转写，也可以直接输入 LaTeX 或文字。" rows={4} />{recognitionNotes[q.id] && <p className="recognition-note">{recognitionNotes[q.id]}</p>}</div>}
             {attempt && <div className="answer-review">
               <button type="button" className="correct-answer" onClick={() => setExpandedReviews(current => ({ ...current, [q.id]: !current[q.id] }))} aria-expanded={reviewOpen}>
                 <strong>正确答案</strong>{attempt.correct_answer ? <MathText text={attempt.correct_answer} /> : <span>—</span>}

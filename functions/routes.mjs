@@ -13,6 +13,8 @@ import { dailyJudgment, getDailyQuestion, generateDailyAiReply, submitDailyAnswe
 import { clearCs408Agent, cs408AgentReply, publicCs408Agent, saveCs408Profile } from './cs408-agent.mjs';
 import { createMathExamPaper, listMathExamYears } from './math-exams.mjs';
 import { advanceCs408PaperJob, createCs408PaperJob } from './cs408-generate.mjs';
+import { createImageAsset } from './image-assets.mjs';
+import { recognizeAnswer } from './recognition.mjs';
 import { createCs408Paper, createCs408PracticePaper, cs408Metrics, cs408NodeQuestionCount, cs408PaperView, ensureCs408RepairCases, gradeCs408Submission, listCs408History, listCs408RepairCases, listCs408WrongBook, listCs408Years } from './cs408.mjs';
 
 function json(value, status = 200) { return Response.json(value, { status }); }
@@ -107,7 +109,7 @@ function publicAttempt(attempt) {
     question_id: attempt.question_id, score_x2: attempt.score_x2, max_score_x2: attempt.max_score_x2,
     score_rate_bp: attempt.score_rate_bp, feedback: attempt.feedback || null,
     grading_status: attempt.grading_status, error_tags_json: attempt.error_tags_json,
-    answer_raw: attempt.answer_raw,
+    answer_raw: attempt.answer_raw, confirmed_latex: attempt.confirmed_latex || null,
   };
 }
 function paperResult(paper, runtime) {
@@ -644,7 +646,14 @@ export function application(runtime) {
       if (!job) fail('not_found', 404);
       return json(jobView(job));
     }
-    if (path === '/api/recognition' && request.method === 'POST') fail('model_unavailable', 503);
+    if (path === '/api/assets' && request.method === 'POST') {
+      return json(createImageAsset(runtime, deviceId, input), 201);
+    }
+    if (path === '/api/recognition' && request.method === 'POST') {
+      if (typeof input.image_asset_id !== 'string' || typeof input.question_id !== 'string') fail('invalid_input');
+      const response = await asyncIdempotent(runtime, request, deviceId, 'recognition', input, () => recognizeAnswer(runtime, deviceId, input));
+      return json(response);
+    }
     fail('not_found', 404);
   };
 }

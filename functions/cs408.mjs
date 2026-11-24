@@ -50,6 +50,7 @@ function attemptView(attempt) {
     score_rate_bp: attempt.score_rate_bp,
     grading_status: attempt.grading_status,
     answer_raw: attempt.answer_raw,
+    confirmed_latex: attempt.confirmed_latex || null,
     feedback: attempt.feedback || null,
   };
 }

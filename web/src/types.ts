@@ -21,7 +21,7 @@ export interface Paper {
 export interface Attempt {
   question_id: string; score_x2: number; max_score_x2: number; score_rate_bp: number;
   feedback?: string; grading_status?: string; error_tags_json?: string[];
-  answer_raw?: string; correct_answer?: string; explanation?: string; solution_steps?: string[];
+  answer_raw?: string; confirmed_latex?: string | null; correct_answer?: string; explanation?: string; solution_steps?: string[];
 }
 export interface GradeResult {
   attempts: Attempt[]; score_x2: number; max_score_x2: number; score_rate_bp: number;

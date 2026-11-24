@@ -409,6 +409,48 @@ test('408 mixed practice combines real and AI questions', async () => {
   assert.equal(job.body.paper.items_json.filter(item => item.question.source === 'real').length, 2);
 });
 
+test('handwriting recognition uses a device asset and returns confirmed latex', async () => {
+  const runtime = createLocalRuntime();
+  const handle = application(runtime);
+  const question = runtime.questions.find(item => item.source === 'real' && item.qtype === 'free_response' && (item.subject || 'math2') === 'math2');
+  assert.ok(question);
+  const image = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=';
+  const asset = await call(handle, '/api/assets', { method: 'POST', key: key(), body: { mime_type: 'image/png', data_url: image } });
+  assert.equal(asset.status, 201, JSON.stringify(asset.body));
+  assert.ok(asset.body.image_asset_id);
+  runtime.llm = async messages => {
+    const content = messages[1].content;
+    assert.ok(Array.isArray(content));
+    assert.equal(content[1].type, 'image_url');
+    assert.ok(content[1].image_url.url.startsWith('data:image/png;base64,'));
+    return JSON.stringify({ recognized_latex: '$\\int_0^1 x dx = \\frac12$', confidence: 91, needs_confirmation: true });
+  };
+  const recognized = await call(handle, '/api/recognition', { method: 'POST', key: key(), body: {
+    image_asset_id: asset.body.image_asset_id, question_id: question.id,
+  } });
+  assert.equal(recognized.status, 200, JSON.stringify(recognized.body));
+  assert.ok(recognized.body.recognized_latex.includes('frac12'));
+  assert.equal(recognized.body.confidence, 91);
+  assert.equal(recognized.body.needs_confirmation, true);
+  const reused = await call(handle, '/api/recognition', { method: 'POST', key: key(), body: {
+    image_asset_id: asset.body.image_asset_id, question_id: question.id,
+  } });
+  assert.equal(reused.status, 404);
+
+  const paper = await call(handle, '/api/math/exam-papers', { method: 'POST', key: key(), body: { year: 2009, restart: true } });
+  const paperData = await call(handle, `/api/papers/${paper.body.id}`);
+  const free = paperData.body.items_json.find(item => item.question.qtype === 'free_response');
+  const answers = paperData.body.items_json.map(item => ({
+    question_id: item.question.id,
+    answer_raw: item.question.qtype === 'single_choice' ? 'A' : item.question.qtype === 'fill_blank' ? '0' : '我的解答',
+    confirmed_latex: item.question.id === free.question.id ? 'x^2+\frac{1}{2}' : null,
+  }));
+  const submitted = await call(handle, `/api/papers/${paper.body.id}/submit`, { method: 'POST', key: key(), body: { answers } });
+  assert.equal(submitted.status, 200);
+  const freeAttempt = submitted.body.attempts.find(attempt => attempt.question_id === free.question.id);
+  assert.equal(freeAttempt.confirmed_latex, 'x^2+\frac{1}{2}');
+});
+
 test('real paper → submit → wrong book → review and similar questions', async () => {
   const runtime = createLocalRuntime();
   const handle = application(runtime);

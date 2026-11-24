@@ -20,7 +20,7 @@ export function createLocalRuntime(options = {}) {
     cs408Knowledge: cs408Knowledge.map(n => ({ ...n })),
     cs408Papers: cs408Papers.map(p => ({ ...p })),
     papers: [], attempts: [], wrongBook: [], repairCases: [], repairDaily: new Map(), repairSampling: new Map(), repairDailyDirty: false, repairSamplingDirty: false, reports: [], jobs: [], llmCalls: [], dailyQuestions: new Map(), dailySubmitQueues: new Map(),
-    idempotency: new Map(), idempotencyInflight: new Map(), deviceSessions: new Map(), aiSettings: new Map(), agentStates: new Map(), aiQuestionReservations: new Map(), composeStats: { success: 0, failure: 0 },
+    idempotency: new Map(), idempotencyInflight: new Map(), imageAssets: new Map(), deviceSessions: new Map(), aiSettings: new Map(), agentStates: new Map(), aiQuestionReservations: new Map(), composeStats: { success: 0, failure: 0 },
     dailyQuestionsDirty: false,
     usage: new Map(), generatedToday: 0, usageDate: utcDate(),
     dataset: 'local-fixtures',
