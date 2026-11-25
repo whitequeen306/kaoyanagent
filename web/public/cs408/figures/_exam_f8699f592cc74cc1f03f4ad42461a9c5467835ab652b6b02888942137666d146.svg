@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="332" height="216" viewBox="0 0 166 108" role="img" aria-labelledby="title description">
+  <title id="title">第 8 题有向图</title>
+  <desc id="description">顶点 a、b、c、d、e；有向边 a 到 e、e 到 d、a 到 b、a 到 c、b 到 c、c 到 d。</desc>
+  <rect width="166" height="108" fill="#fff"/>
+  <defs>
+    <marker id="arrow" viewBox="0 0 8 8" refX="8" refY="4" markerWidth="6" markerHeight="6" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0 0 8 4 0 8Z" fill="#111"/>
+    </marker>
+  </defs>
+  <g fill="none" stroke="#111" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)">
+    <path d="M34 42 77 16"/>
+    <path d="M95 16 138 42"/>
+    <path d="M31 59 54 83"/>
+    <path d="M36 53 98 86"/>
+    <path d="M72 90 99 90"/>
+    <path d="M117 83 141 58"/>
+  </g>
+  <g fill="#fff" stroke="#111" stroke-width="1.35">
+    <circle cx="27" cy="49" r="10"/>
+    <circle cx="86" cy="11" r="10"/>
+    <circle cx="145" cy="49" r="10"/>
+    <circle cx="61" cy="90" r="10"/>
+    <circle cx="110" cy="90" r="10"/>
+  </g>
+  <g fill="#111" font-family="Georgia, 'Times New Roman', serif" font-size="12" text-anchor="middle" dominant-baseline="central">
+    <text x="27" y="49">a</text>
+    <text x="61" y="90">b</text>
+    <text x="110" y="90">c</text>
+    <text x="145" y="49">d</text>
+    <text x="86" y="11">e</text>
+  </g>
+</svg>

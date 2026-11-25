@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-label="四棵候选二叉排序树" width="84" height="86" viewBox="72 0 84 86">
+<g fill="white" stroke="#999" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round">
+<g transform="translate(-5.6500 -4.2500)">
+<line x1="47.5" y1="25" x2="32.3" y2="49.5"/>
+<line x1="32.3" y1="49.5" x2="51" y2="69.5"/>
+<circle cx="47.5" cy="25" r="7.4"/>
+<circle cx="32.3" cy="49.5" r="7.4"/>
+<circle cx="51" cy="69.5" r="7.4"/>
+</g>
+<g transform="translate(65.0000 -1.5000)">
+<line x1="56" y1="22" x2="41" y2="45"/>
+<line x1="56" y1="22" x2="71" y2="45"/>
+<line x1="41" y1="45" x2="27" y2="66.5"/>
+<line x1="71" y1="45" x2="58" y2="67"/>
+<circle cx="56" cy="22" r="7.4"/>
+<circle cx="41" cy="45" r="7.4"/>
+<circle cx="71" cy="45" r="7.4"/>
+<circle cx="27" cy="66.5" r="7.4"/>
+<circle cx="58" cy="67" r="7.4"/>
+</g>
+<g transform="translate(151.7500 -0.4000)">
+<line x1="33.5" y1="15.8" x2="20" y2="35.8"/>
+<line x1="33.5" y1="15.8" x2="46.3" y2="36"/>
+<line x1="46.3" y1="36" x2="61.5" y2="54.8"/>
+<line x1="61.5" y1="54.8" x2="48.8" y2="71"/>
+<circle cx="33.5" cy="15.8" r="7.4"/>
+<circle cx="20" cy="35.8" r="7.4"/>
+<circle cx="46.3" cy="36" r="7.4"/>
+<circle cx="61.5" cy="54.8" r="7.4"/>
+<circle cx="48.8" cy="71" r="7.4"/>
+</g>
+<g transform="translate(224.2000 0.4500)">
+<line x1="44.8" y1="12.3" x2="32.5" y2="30.8"/>
+<line x1="44.8" y1="12.3" x2="61.3" y2="32.8"/>
+<line x1="32.5" y1="30.8" x2="20.3" y2="48.5"/>
+<line x1="32.5" y1="30.8" x2="48.8" y2="48.3"/>
+<line x1="20.3" y1="48.5" x2="36.5" y2="60.8"/>
+<line x1="36.5" y1="60.8" x2="53" y2="72.8"/>
+<circle cx="44.8" cy="12.3" r="7.4"/>
+<circle cx="32.5" cy="30.8" r="7.4"/>
+<circle cx="61.3" cy="32.8" r="7.4"/>
+<circle cx="20.3" cy="48.5" r="7.4"/>
+<circle cx="48.8" cy="48.3" r="7.4"/>
+<circle cx="36.5" cy="60.8" r="7.4"/>
+<circle cx="53" cy="72.8" r="7.4"/>
+</g>
+</g>
+</svg>
