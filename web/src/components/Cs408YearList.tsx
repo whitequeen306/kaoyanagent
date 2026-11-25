@@ -7,16 +7,26 @@ export function Cs408YearList({ years, loading, busy, onOpen }: {
   busy: boolean;
   onOpen: (year: number, restart?: boolean) => void;
 }) {
-  const submitted = years.filter(item => item.status === 'submitted').length;
+  const answeredFor = (item: Cs408Year) => {
+    if (item.status === 'submitted') return item.answered_questions || 0;
+    if (!item.paper_id) return 0;
+    try {
+      const saved = localStorage.getItem(`kaoyan-cs408-answers-${item.paper_id}`);
+      const map = saved ? JSON.parse(saved) as Record<string, string> : {};
+      return Object.values(map).filter(value => typeof value === 'string' && value.trim()).length;
+    } catch { return 0; }
+  };
+  const workedYears = years.filter(item => answeredFor(item) > 0).length;
+  const workedQuestions = years.reduce((sum, item) => sum + answeredFor(item), 0);
   return <section className="simple-page cs408-page">
     <span className="eyebrow">408 · 计算机学科专业基础综合</span>
     <h1>历年真题整卷</h1>
     <p>按年份练完整试卷。40 道单选交卷后自动判分，7 道综合题对照解析自评；错题自动进入 408 错题本。</p>
     <div className="cs408-summary-strip">
       <div><strong>{years.length}</strong><span>年真题</span></div>
-      <div><strong>{years.length * 47}</strong><span>道题</span></div>
-      <div><strong>{submitted}</strong><span>套已交卷</span></div>
-      <div><strong>80</strong><span>单选自动判分</span></div>
+      <div><strong>{years.reduce((sum, item) => sum + item.question_count, 0)}</strong><span>道题</span></div>
+      <div><strong>{workedYears}</strong><span>年已做</span></div>
+      <div><strong>{workedQuestions}</strong><span>题已做</span></div>
     </div>
     {loading && !years.length ? <div className="empty-card"><h2>正在加载真题…</h2><p>读取 2009—2026 年试卷目录。</p></div> : <div className="cs408-year-grid">
       {years.slice().sort((a, b) => b.year - a.year).map(item => {

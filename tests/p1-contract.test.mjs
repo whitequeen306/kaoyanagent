@@ -69,6 +69,7 @@ test('math exam years create a real full-year paper without touching 408', async
   assert.ok(years.body.items.length >= 20);
   assert.equal(years.body.items[0].year, 2026);
   assert.ok(years.body.items.every(item => item.total_score_x2 === 300));
+  assert.ok(years.body.items.every(item => item.answered_questions === 0));
   const created = await call(handle, '/api/math/exam-papers', { method: 'POST', key: key(), body: { year: 2009 } });
   assert.equal(created.status, 201, JSON.stringify(created.body));
   assert.equal(created.body.origin, 'math_exam');
@@ -130,6 +131,8 @@ test('408 full paper is isolated, auto-grades single choice and feeds the 408 wr
   const y2009 = yearsAfter.body.items.find(item => item.year === 2009);
   assert.equal(y2009.status, 'submitted');
   assert.equal(y2009.score_x2, 156);
+  assert.equal(y2009.answered_questions, 40);
+  assert.equal(yearsAfter.body.items.find(item => item.year === 2010).answered_questions, 0);
   const history = await call(handle, '/api/cs408/history');
   assert.equal(history.status, 200);
   assert.equal(history.body.items.length, 1);

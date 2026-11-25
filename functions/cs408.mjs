@@ -80,6 +80,9 @@ export function listCs408Years(runtime, deviceId) {
     const papers = cs408YearPapers(runtime, deviceId, meta.year);
     const latest = papers[0] || null;
     const summary = latest?.status === 'submitted' ? cs408Summary(latest, runtime) : null;
+    const answeredQuestions = latest
+      ? runtime.attempts.filter(attempt => attempt.paper_instance_id === latest.id && (attempt.answer_raw || '').trim()).length
+      : 0;
     return {
       ...meta,
       paper_id: latest?.id || null,
@@ -90,6 +93,7 @@ export function listCs408Years(runtime, deviceId) {
       max_score_x2: summary?.max_score_x2 ?? autoScoreFor(latest),
       score_rate_bp: summary?.score_rate_bp ?? null,
       attempt_count: papers.length,
+      answered_questions: answeredQuestions,
     };
   }).sort((a, b) => b.year - a.year);
 }

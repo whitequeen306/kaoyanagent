@@ -105,7 +105,7 @@ export interface Cs408Year {
   single_choice: number; free_response: number; question_count: number;
   total_score_x2: number; auto_score_x2: number;
   paper_id: string | null; status: string | null; created_at?: string | null; submitted_at?: string | null;
-  score_x2: number | null; max_score_x2: number; score_rate_bp: number | null; attempt_count: number;
+  score_x2: number | null; max_score_x2: number; score_rate_bp: number | null; attempt_count: number; answered_questions: number;
 }
 export interface Cs408WrongItem {
   question_id: string; first_wrong_at: string; last_result?: string; review_count?: number;
@@ -161,5 +161,5 @@ export interface MathExamYear {
   year: number; question_count: number; single_choice: number; fill_blank: number; free_response: number;
   total_score_x2: number; held_count: number; paper_id: string | null; status: string | null;
   created_at?: string | null; submitted_at?: string | null;
-  score_x2: number | null; max_score_x2: number; score_rate_bp: number | null; attempt_count: number;
+  score_x2: number | null; max_score_x2: number; score_rate_bp: number | null; attempt_count: number; answered_questions: number;
 }

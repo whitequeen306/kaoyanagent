@@ -227,6 +227,7 @@ h2 { letter-spacing: -.025em; }
 :is(.daily-card, .wrong-card), :is(.daily-card, .wrong-card) :is(.answer-options, .answer-options button, .stem, .sub-item, .answer-detail, .daily-ai-message, .daily-ai-followup, .daily-judgment, .daily-review, .daily-wrong-answer) { min-width: 0; overflow-wrap: anywhere; }
 :is(.daily-card, .wrong-card) .math-text, :is(.daily-card, .wrong-card) .math-display { display: block; min-width: 0; max-width: 100%; overflow-x: auto; }
 :is(.daily-card, .wrong-card) .math-text { white-space: pre-wrap; }
+:is(.daily-card, .wrong-card) .answer-options .math-text { overflow-x: clip; }
 :is(.daily-card, .wrong-card) .katex { white-space: nowrap; }
 .daily-judgment small { color: var(--site-muted); font-size: 11px; }
 .daily-ai-panel { position: relative; z-index: 1; margin-top: 18px; padding: 16px; border: 1px solid #c7d9cb; border-radius: 13px; background: rgba(248, 251, 247, .86); }
