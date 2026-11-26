@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
 import { request } from '../lib/api';
 import type {
-  Cs408HistoryItem, Cs408Metrics, Cs408Paper, Cs408RepairCase, Cs408RepairPayload,
+  Cs408HistoryItem, Cs408Paper, Cs408RepairCase, Cs408RepairPayload,
   Cs408WrongItem, Cs408Year,
 } from '../types';
 import type { Cs408ComposeOptions } from '../components/Cs408Compose';
 
-type Cs408View = 'compose' | 'repair' | 'papers' | 'paper' | 'wrong' | 'history' | 'metrics' | 'agent';
-type Cs408Back = 'compose' | 'repair' | 'papers' | 'history' | 'metrics';
+type Cs408View = 'compose' | 'repair' | 'papers' | 'paper' | 'wrong' | 'history' | 'agent';
+type Cs408Back = 'compose' | 'repair' | 'papers' | 'history';
 
 export function useCs408Workspace({ subject, completedJobCount, aiSettings, openSettings, setError, onQueueJob }: {
   subject: 'math2' | 'cs408';
@@ -30,8 +30,6 @@ export function useCs408Workspace({ subject, completedJobCount, aiSettings, open
   const [cs408RepairLoading, setCs408RepairLoading] = useState(false);
   const [cs408History, setCs408History] = useState<Cs408HistoryItem[]>([]);
   const [cs408HistoryLoading, setCs408HistoryLoading] = useState(false);
-  const [cs408Metrics, setCs408Metrics] = useState<Cs408Metrics | null>(null);
-  const [cs408MetricsLoading, setCs408MetricsLoading] = useState(false);
   const [cs408Busy, setCs408Busy] = useState(false);
   const [cs408Loading, setCs408Loading] = useState(false);
 
@@ -144,14 +142,7 @@ export function useCs408Workspace({ subject, completedJobCount, aiSettings, open
     } catch (e) { setError(e instanceof Error ? e.message : '408 试卷记录加载失败'); }
     finally { setCs408HistoryLoading(false); }
   }
-  async function loadCs408Metrics() {
-    setCs408MetricsLoading(true); setCs408View('metrics');
-    try {
-      setCs408Metrics(await request<Cs408Metrics>('/api/cs408/metrics'));
-    } catch (e) { setError(e instanceof Error ? e.message : '408 数据中心加载失败'); }
-    finally { setCs408MetricsLoading(false); }
-  }
-  async function openCs408PaperById(id: string, back: 'history' | 'metrics' | 'compose' | 'repair') {
+  async function openCs408PaperById(id: string, back: 'history' | 'compose' | 'repair') {
     setCs408Busy(true); setError('');
     try {
       const data = await request<Cs408Paper>(`/api/cs408/papers/${id}`);
@@ -203,10 +194,10 @@ export function useCs408Workspace({ subject, completedJobCount, aiSettings, open
   return {
     cs408View, setCs408View, cs408PaperBack, cs408Years, cs408Paper, cs408Answers,
     cs408Wrong, cs408RepairCases, cs408RepairDate, cs408RepairBacklog, cs408RepairCompleted,
-    cs408RepairLoading, cs408History, cs408HistoryLoading, cs408Metrics, cs408MetricsLoading,
+    cs408RepairLoading, cs408History, cs408HistoryLoading,
     cs408Busy, cs408Loading,
     loadCs408Years, openCs408Year, startCs408Practice, loadCs408Repair, startCs408Repair,
-    openCs408RepairPaper, loadCs408History, loadCs408Metrics, openCs408PaperById,
+    openCs408RepairPaper, loadCs408History, openCs408PaperById,
     loadCs408Wrong, submitCs408, setCs408Answer, openCs408JobPaper,
   };
 }

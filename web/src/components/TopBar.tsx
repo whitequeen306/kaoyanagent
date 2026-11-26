@@ -1,6 +1,6 @@
 type Subject = 'math2' | 'cs408';
-type MathView = 'repair' | 'compose' | 'paper' | 'wrong' | 'papers' | 'examPapers' | 'metrics' | 'agent';
-type Cs408View = 'compose' | 'repair' | 'papers' | 'paper' | 'wrong' | 'history' | 'metrics' | 'agent';
+type MathView = 'repair' | 'compose' | 'paper' | 'wrong' | 'papers' | 'examPapers' | 'agent';
+type Cs408View = 'compose' | 'repair' | 'papers' | 'paper' | 'wrong' | 'history' | 'agent';
 
 export function TopBar({ subject, view, cs408View, onSwitchSubject, onBrand, onOpenSettings, actions }: {
   subject: Subject;
@@ -15,14 +15,12 @@ export function TopBar({ subject, view, cs408View, onSwitchSubject, onBrand, onO
     repair: () => void;
     wrong: () => void;
     papers: () => void;
-    metrics: () => void;
     agent: () => void;
     cs408Compose: () => void;
     cs408Repair: () => void;
     cs408Papers: () => void;
     cs408History: () => void;
     cs408Wrong: () => void;
-    cs408Metrics: () => void;
     cs408Agent: () => void;
   };
 }) {
@@ -43,16 +41,14 @@ export function TopBar({ subject, view, cs408View, onSwitchSubject, onBrand, onO
         <button {...tab(view === 'repair')} onClick={actions.repair}>今日修复</button>
         <button {...tab(view === 'wrong')} onClick={actions.wrong}>错题本</button>
         <button {...tab(view === 'papers')} onClick={actions.papers}>我的试卷</button>
-        <button {...tab(view === 'metrics')} onClick={actions.metrics}>数据中心</button>
         <button {...tab(view === 'agent')} onClick={actions.agent}>学习助手</button>
         <button onClick={onOpenSettings}>模型设置</button>
       </> : <>
         <button {...tab(cs408View === 'compose')} onClick={actions.cs408Compose}>自由练习</button>
-        <button {...tab(cs408View === 'repair')} onClick={actions.cs408Repair}>今日修复</button>
         <button {...tab(cs408View === 'papers')} onClick={actions.cs408Papers}>真题试卷</button>
-        <button {...tab(cs408View === 'history')} onClick={actions.cs408History}>我的试卷</button>
+        <button {...tab(cs408View === 'repair')} onClick={actions.cs408Repair}>今日修复</button>
         <button {...tab(cs408View === 'wrong')} onClick={actions.cs408Wrong}>错题本</button>
-        <button {...tab(cs408View === 'metrics')} onClick={actions.cs408Metrics}>数据中心</button>
+        <button {...tab(cs408View === 'history')} onClick={actions.cs408History}>我的试卷</button>
         <button {...tab(cs408View === 'agent')} onClick={actions.cs408Agent}>学习助手</button>
         <button onClick={onOpenSettings}>模型设置</button>
       </>}

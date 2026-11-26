@@ -6,7 +6,6 @@ import { JobDock } from './components/JobDock';
 import { TopBar } from './components/TopBar';
 import { SettingsModal } from './components/SettingsModal';
 import { MathYearList } from './components/MathYearList';
-import { RecentPaperPreview } from './components/RecentPaperPreview';
 import { PdfExportOverlays } from './components/PdfExportOverlays';
 import { ComposeConfirmModal } from './components/ComposeConfirmModal';
 import { SubmitConfirmModal } from './components/SubmitConfirmModal';
@@ -19,7 +18,6 @@ import { Cs408YearList } from './components/Cs408YearList';
 import { Cs408Compose } from './components/Cs408Compose';
 import { Cs408RepairPanel } from './components/Cs408RepairPanel';
 import { Cs408History } from './components/Cs408History';
-import { Cs408Dashboard } from './components/Cs408Dashboard';
 import { Cs408AgentPanel } from './components/Cs408AgentPanel';
 import { Cs408PaperView } from './components/Cs408PaperView';
 import { Cs408WrongBook } from './components/Cs408WrongBook';
@@ -27,13 +25,12 @@ import { MathComposeView } from './views/MathComposeView';
 import { MathPaperView } from './views/MathPaperView';
 import { MathWrongView } from './views/MathWrongView';
 import { MathPapersView } from './views/MathPapersView';
-import { MathMetricsView } from './views/MathMetricsView';
 import { deviceId, request } from './lib/api';
 import { sourceLabel } from './lib/paperMeta';
 import type { Difficulty, GradeResult, Knowledge, MathExamYear, Paper, PaperGrading, PaperMode, Qtype, RepairCase, SourceMode } from './types';
 
 export default function App() {
-  const [view, setView] = useState<'repair' | 'compose' | 'paper' | 'wrong' | 'papers' | 'examPapers' | 'metrics' | 'agent'>('compose');
+  const [view, setView] = useState<'repair' | 'compose' | 'paper' | 'wrong' | 'papers' | 'examPapers' | 'agent'>('compose');
   const [paperOrigin, setPaperOrigin] = useState<'compose' | 'papers' | 'repair' | 'exams'>('compose');
   const [knowledge, setKnowledge] = useState<Knowledge[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
@@ -54,8 +51,6 @@ export default function App() {
   const [submitConfirm, setSubmitConfirm] = useState(false);
   const [cs408SubmitConfirm, setCs408SubmitConfirm] = useState(false);
   const [expandedReviews, setExpandedReviews] = useState<Record<string, boolean>>({});
-  const [recentPreview, setRecentPreview] = useState<any>(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
   const [wrongItems, setWrongItems] = useState<any[]>([]);
   const [repairCases, setRepairCases] = useState<RepairCase[]>([]);
   const [repairLoading, setRepairLoading] = useState(false);
@@ -63,8 +58,6 @@ export default function App() {
   const [repairBacklogCount, setRepairBacklogCount] = useState(0);
   const dailyWrongTarget = useRef<string | null>(null);
   const [myPapers, setMyPapers] = useState<any[]>([]);
-  const [metrics, setMetrics] = useState<any>(null);
-  const [trends, setTrends] = useState<any[]>([]);
   const [mathExamYears, setMathExamYears] = useState<MathExamYear[]>([]);
   const [mathExamLoading, setMathExamLoading] = useState(false);
   const [showMathHelp, setShowMathHelp] = useState(false);
@@ -134,10 +127,10 @@ export default function App() {
   const {
     cs408View, setCs408View, cs408PaperBack, cs408Years, cs408Paper, cs408Answers,
     cs408Wrong, cs408RepairCases, cs408RepairDate, cs408RepairBacklog, cs408RepairCompleted,
-    cs408RepairLoading, cs408History, cs408HistoryLoading, cs408Metrics, cs408MetricsLoading,
+    cs408RepairLoading, cs408History, cs408HistoryLoading,
     cs408Busy, cs408Loading,
     loadCs408Years, openCs408Year, startCs408Practice, loadCs408Repair, startCs408Repair,
-    openCs408RepairPaper, loadCs408History, loadCs408Metrics, openCs408PaperById,
+    openCs408RepairPaper, loadCs408History, openCs408PaperById,
     loadCs408Wrong, submitCs408, setCs408Answer, openCs408JobPaper,
   } = useCs408Workspace({
     subject, completedJobCount, aiSettings, openSettings, setError,
@@ -204,14 +197,6 @@ export default function App() {
     setPaperOrigin((task.paper as any).config_json?.origin === 'repair' ? 'repair' : 'compose');
     setPaper(task.paper); setAnswers({}); setConfirmedLatex({}); setRecognitionNotes({}); setResult(null); setGrading(null); setExpandedReviews({}); setElapsed(0); setView('paper');
     dismissJob(task.id);
-  }
-  async function openRecentPaper(id: string) {
-    setPreviewLoading(true); setError('');
-    try {
-      const data = await request<any>(`/api/metrics/papers/${id}`);
-      setRecentPreview(data);
-    } catch (e) { setError(e instanceof Error ? e.message : '组卷详情加载失败'); }
-    finally { setPreviewLoading(false); }
   }
   async function submit() {
     if (!paper) return;
@@ -364,13 +349,6 @@ export default function App() {
     } catch (e) { setError(e instanceof Error ? e.message : '加载试卷失败'); }
     finally { setBusy(false); }
   }
-  async function loadMetrics() {
-    setBusy(true); setError('');
-    try {
-      const [current, trend] = await Promise.all([request<any>('/api/metrics/current'), request<any>('/api/metrics/trends')]);
-      setMetrics(current); setTrends(trend.series); setView('metrics');
-    } catch (e) { setError(e instanceof Error ? e.message : '加载失败'); } finally { setBusy(false); }
-  }
   async function loadMathExamYears(navigate = true) {
     setMathExamLoading(true);
     if (navigate) setView('examPapers');
@@ -414,8 +392,6 @@ export default function App() {
   return <div className="app-shell">
     <MathBackdrop subject={subject} />
     <a className="skip-link" href="#main-content">跳到主要内容</a>
-    {recentPreview && <RecentPaperPreview preview={recentPreview} onClose={() => setRecentPreview(null)} />}
-    {previewLoading && <div className="preview-loading no-print">正在加载组卷详情…</div>}
     <SettingsModal
       open={settingsOpen}
       busy={settingsBusy}
@@ -488,14 +464,12 @@ export default function App() {
         repair: () => { void loadRepair(); setView('repair'); },
         wrong: loadWrong,
         papers: loadMyPapers,
-        metrics: loadMetrics,
         agent: () => setView('agent'),
         cs408Compose: () => { setCs408View('compose'); window.scrollTo({ top: 0, behavior: 'instant' }); },
         cs408Repair: () => { setCs408View('repair'); window.scrollTo({ top: 0, behavior: 'instant' }); void loadCs408Repair(); },
         cs408Papers: () => { setCs408View('papers'); window.scrollTo({ top: 0, behavior: 'instant' }); void loadCs408Years(); },
         cs408History: () => { window.scrollTo({ top: 0, behavior: 'instant' }); void loadCs408History(); },
         cs408Wrong: loadCs408Wrong,
-        cs408Metrics: () => { window.scrollTo({ top: 0, behavior: 'instant' }); void loadCs408Metrics(); },
         cs408Agent: () => { setCs408View('agent'); window.scrollTo({ top: 0, behavior: 'instant' }); },
       }}
     />
@@ -583,7 +557,6 @@ export default function App() {
         onDraftPdf={saveDraftPdfDirect}
         onCompose={() => setView('compose')}
       />}
-      {view === 'metrics' && <MathMetricsView metrics={metrics} trends={trends} onOpenRecent={openRecentPaper} />}
       </>}
       {subject === 'cs408' && cs408View === 'compose' && <Cs408Compose busy={cs408Busy} aiConfigured={Boolean(aiSettings?.configured)} onOpenSettings={openSettings} onStart={startCs408Practice} />}
       {subject === 'cs408' && cs408View === 'repair' && <Cs408RepairPanel
@@ -613,13 +586,12 @@ export default function App() {
         busy={cs408Busy}
         onAnswer={setCs408Answer}
         onSubmit={() => setCs408SubmitConfirm(true)}
-        backLabel={cs408PaperBack === 'compose' ? '408 自由练习' : cs408PaperBack === 'repair' ? '408 今日修复' : cs408PaperBack === 'history' ? '408 我的试卷' : cs408PaperBack === 'metrics' ? '408 数据中心' : '408 历年真题'}
+        backLabel={cs408PaperBack === 'compose' ? '408 自由练习' : cs408PaperBack === 'repair' ? '408 今日修复' : cs408PaperBack === 'history' ? '408 我的试卷' : '408 历年真题'}
         onBack={() => { setCs408View(cs408PaperBack); window.scrollTo({ top: 0, behavior: 'instant' }); }}
         onWrong={loadCs408Wrong}
       />}
       {subject === 'cs408' && cs408View === 'history' && <Cs408History items={cs408History} loading={cs408HistoryLoading} onOpen={id => openCs408PaperById(id, 'history')} onPractice={() => setCs408View('compose')} />}
       {subject === 'cs408' && cs408View === 'wrong' && <Cs408WrongBook items={cs408Wrong} loading={cs408Busy} />}
-      {subject === 'cs408' && cs408View === 'metrics' && <Cs408Dashboard metrics={cs408Metrics} loading={cs408MetricsLoading} onOpen={id => openCs408PaperById(id, 'metrics')} onRefresh={() => void loadCs408Metrics()} />}
       {subject === 'cs408' && cs408View === 'agent' && <Cs408AgentPanel aiConfigured={Boolean(aiSettings?.configured)} onOpenSettings={openSettings} />}
     </main>
     <JobDock jobs={jobs} open={jobsOpen} onToggle={() => setJobsOpen(open => !open)} onOpenPaper={openJobPaper} onDismiss={dismissJob} />
