@@ -67,7 +67,7 @@ export function MathPapersView({ papers, onOpen, onOpenPdf, onDraftPdf, onCompos
             <span className="paper-history-date">{new Date(paper.created_at).toLocaleString('zh-CN')}</span>
           </div>
           <h2>{paper.title}</h2>
-          <p>{paper.questions} 题 · 卷面 {formatScore(paper.total_score_x2)} 分{paper.status === 'submitted' && paper.score_x2 != null ? ` · 得分 ${formatScore(paper.score_x2)} / ${formatScore(paper.max_score_x2)} · 得分率 ${paper.score_rate_bp / 100}%` : ' · 继续作答'}</p>
+          <p>{paper.questions} 题 · 卷面 {formatScore(paper.total_score_x2)} 分{paper.status === 'submitted' && paper.grading_pending ? ' · 解答题 AI 批改中…' : paper.status === 'submitted' && paper.score_x2 != null ? ` · 得分 ${formatScore(paper.score_x2)} / ${formatScore(paper.max_score_x2)} · 得分率 ${paper.score_rate_bp / 100}%` : ' · 继续作答'}</p>
         </button>
         <div className="paper-history-actions">
           <button className="paper-history-open" onClick={() => onOpen(paper.id)}>{paper.status === 'submitted' ? '查看解析 →' : '继续作答 →'}</button>

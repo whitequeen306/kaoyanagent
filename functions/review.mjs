@@ -2,7 +2,14 @@ import { nowIso } from './model.mjs';
 
 const reviewIntervals = [1, 2, 4, 7, 15, 30];
 
+// 变式题是修复工具，不是独立错题：掌握度由修复轮次记录，避免浅层变式稀释错题池。
+function isVariantQuestion(runtime, questionId) {
+  const question = runtime.questions.find(item => item.id === questionId);
+  return question?.source === 'ai' && Boolean(question.generator_meta_json?.variant_of);
+}
+
 export function recordReviewOutcome(runtime, deviceId, questionId, correct, { attemptId = null, dailyDate = null }) {
+  if (isVariantQuestion(runtime, questionId)) return;
   let entry = runtime.wrongBook.find(item => item.device_id === deviceId && item.question_id === questionId);
   if (!entry) {
     if (correct) return;

@@ -10,6 +10,7 @@ import { realQuestions } from '../functions/real-data.mjs';
 import { composePaper } from '../functions/compose.mjs';
 import { createPaperJob } from '../functions/generate.mjs';
 import { syncRepairForPaper } from '../functions/repair.mjs';
+import { recordReviewOutcome } from '../functions/review.mjs';
 import { createPersistence } from '../dev/persist.mjs';
 import { buildAgentContext, contextBudget, resolveModelProfile } from '../functions/agent-context.mjs';
 import { DatabaseSync } from 'node:sqlite';
@@ -1736,4 +1737,112 @@ test('daily question selection persists after a read-only creation', async () =>
   } finally {
     if (fs.existsSync(file)) fs.unlinkSync(file);
   }
+});
+
+test('paper free-response answers are AI graded with step ratio and update repair state', async () => {
+  const runtime = createLocalRuntime();
+  let calls = 0;
+  runtime.llm = async messages => {
+    calls += 1;
+    assert.ok(String(messages[1].content).includes('student_answer'));
+    return JSON.stringify({ score_ratio: 0.5, feedback: '思路正确，但第二步符号写错了。', error_tags: ['计算'] });
+  };
+  const handle = application(runtime);
+  const created = await call(handle, '/api/math/exam-papers', { method: 'POST', key: key(), body: { year: 2009 } });
+  const paper = (await call(handle, `/api/papers/${created.body.id}`)).body;
+  const freeItems = paper.items_json.filter(item => item.question.qtype === 'free_response');
+  const answeredFree = freeItems[0];
+  const answers = paper.items_json.map(item => ({
+    question_id: item.question.id,
+    answer_raw: item.question.qtype === 'single_choice' ? 'A' : item.question.qtype === 'fill_blank' ? '0'
+      : item.question.id === answeredFree.question.id ? '第一步移项，第二步把符号写成了负号。' : '',
+  }));
+  const submitted = await call(handle, `/api/papers/${paper.id}/submit`, { method: 'POST', key: key(), body: { answers } });
+  assert.equal(submitted.status, 200, JSON.stringify(submitted.body));
+  assert.equal(submitted.body.grading.pending_count, 1);
+  const pending = submitted.body.attempts.find(attempt => attempt.question_id === answeredFree.question.id);
+  assert.equal(pending.grading_status, 'pending_review');
+  const job = runtime.jobs.find(item => item.kind === 'grading');
+  assert.ok(job);
+  let step;
+  for (let index = 0; index < 3; index += 1) {
+    step = await call(handle, `/api/jobs/${job.id}/step`, { method: 'POST', body: {} });
+    if (step.body.status === 'succeeded') break;
+  }
+  assert.equal(step.body.status, 'succeeded', JSON.stringify(step.body));
+  assert.equal(calls, 1);
+  const refreshed = (await call(handle, `/api/papers/${paper.id}`)).body;
+  const graded = refreshed.result.attempts.find(attempt => attempt.question_id === answeredFree.question.id);
+  assert.equal(graded.grading_status, 'completed');
+  assert.equal(graded.score_x2, Math.round(graded.max_score_x2 / 2));
+  assert.ok(graded.feedback.includes('符号'));
+  assert.equal(refreshed.grading.pending_count, 0);
+});
+
+test('variant answers do not create new wrong-book entries', () => {
+  const runtime = createLocalRuntime();
+  const source = runtime.questions.find(question => question.source === 'real' && question.qtype === 'single_choice');
+  const variant = {
+    ...source, id: `variant-${crypto.randomUUID()}`, source: 'ai',
+    generator_meta_json: { ...(source.generator_meta_json || {}), variant_of: source.id },
+  };
+  runtime.questions.push(variant);
+  recordReviewOutcome(runtime, device, source.id, false, {});
+  assert.equal(runtime.wrongBook.length, 1);
+  recordReviewOutcome(runtime, device, variant.id, false, {});
+  recordReviewOutcome(runtime, device, variant.id, true, {});
+  assert.equal(runtime.wrongBook.length, 1);
+  assert.equal(runtime.wrongBook[0].question_id, source.id);
+});
+
+test('AI generation retries once after a format failure and after a blind-solve mismatch', async () => {
+  const runtime = createLocalRuntime();
+  let calls = 0;
+  runtime.llm = async () => {
+    calls += 1;
+    if (calls === 1) return JSON.stringify({ items: [] });
+    if (calls === 2) return JSON.stringify({ items: [{
+      qtype: 'single_choice', stem_latex: '重试后生成的题 $x$',
+      options: [{ label: 'A', latex: '$1$' }, { label: 'B', latex: '$2$' }, { label: 'C', latex: '$3$' }, { label: 'D', latex: '$4$' }],
+      answer_latex: 'B', knowledge_code: leaf.code, exam_point: '函数概念', difficulty: 'medium',
+      explanation: '代入计算。', solution_steps: [],
+    }] });
+    if (calls === 3) return JSON.stringify({ answers: [{ index: 1, answer_latex: 'NONE' }] });
+    return JSON.stringify({ answers: [{ index: 1, answer_latex: 'B' }] });
+  };
+  const handle = application(runtime);
+  const leaf = (await call(handle, '/api/knowledge')).body.items.find(item => item.level === 3);
+  const queued = await call(handle, '/api/papers/compose', { method: 'POST', key: key(), body: {
+    concept_node_ids: [leaf.id], count: 1, type_counts: { single_choice: 1 },
+    source_mode: 'ai', mode: 'drill', difficulty: 'medium',
+  } });
+  assert.equal(queued.status, 202, JSON.stringify(queued.body));
+  let job;
+  for (let index = 0; index < 4; index += 1) {
+    job = await call(handle, `/api/jobs/${queued.body.job_id}/step`, { method: 'POST', body: {} });
+    if (job.body.status === 'succeeded' || job.body.status === 'failed') break;
+  }
+  assert.equal(job.body.status, 'succeeded', JSON.stringify(job.body));
+  assert.equal(calls, 4);
+  assert.equal(job.body.paper.items_json.length, 1);
+});
+
+test('agent degrades with an assistant fallback after repeated job failures', async () => {
+  const runtime = createLocalRuntime();
+  runtime.llm = async () => { throw new Error('model down'); };
+  const handle = application(runtime);
+  const created = await call(handle, '/api/agent/tasks', { method: 'POST', key: key(), body: { device_id: device, goal: '生成一份 AI 仿真卷' } });
+  const task = runtime.agentStates.get(device).tasks.find(item => item.id === created.body.id);
+  task.context_state.job_failures = 1;
+  task.pending_job = { id: 'failed-job-0002', tool: 'compose_paper' };
+  task.context_state.tool_results = [{ tool: 'list_wrong_questions', ok: true, summary: '找到 3 道错题。', data: [] }];
+  runtime.jobs.push({ id: 'failed-job-0002', device_id: device, kind: 'paper', status: 'failed', error: 'ai_blind_solve_mismatch' });
+  const failed = await call(handle, `/api/agent/tasks/${task.id}/step`, { method: 'POST', body: {} });
+  assert.equal(failed.body.context_state.job_failures, 2);
+  const degraded = await call(handle, `/api/agent/tasks/${task.id}/step`, { method: 'POST', body: {} });
+  assert.equal(degraded.body.status, 'degraded');
+  assert.ok(degraded.body.result.reply.includes('替代'));
+  assert.ok(degraded.body.result.reply.includes('错题'));
+  const conversation = await call(handle, `/api/agent/conversations/${task.conversation_id}`);
+  assert.ok(conversation.body.messages.some(message => message.role === 'assistant' && message.content === degraded.body.result.reply));
 });

@@ -22,9 +22,10 @@ export function Cs408YearList({ years, loading, busy, onOpen }: {
     <span className="eyebrow">408 · 计算机学科专业基础综合</span>
     <h1>历年真题整卷</h1>
     <p>按年份练完整试卷。40 道单选交卷后自动判分，7 道综合题对照解析自评；错题自动进入 408 错题本。</p>
+    <p className="muted">此处统计的是整卷收录题数；数据中心还会统计自由练习与 AI 原创题，所以题库总数更大。</p>
     <div className="cs408-summary-strip">
       <div><strong>{years.length}</strong><span>年真题</span></div>
-      <div><strong>{years.reduce((sum, item) => sum + item.question_count, 0)}</strong><span>道题</span></div>
+      <div><strong>{years.reduce((sum, item) => sum + item.question_count, 0)}</strong><span>道整卷题</span></div>
       <div><strong>{workedYears}</strong><span>年已做</span></div>
       <div><strong>{workedQuestions}</strong><span>题已做</span></div>
     </div>

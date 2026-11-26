@@ -2,8 +2,12 @@
 // without changing application routes or exposing secrets to the browser.
 import { application, errorResponse } from './routes.mjs';
 import { createLocalRuntime } from './runtime.mjs';
+import { startJobRunner } from './job-runner.mjs';
 
-const handle = application(createLocalRuntime());
+const runtime = createLocalRuntime();
+// 后台推进 AI 任务，页面关闭后仍继续；无定时能力的运行环境由前端轮询兜底。
+startJobRunner(runtime);
+const handle = application(runtime);
 const MAX_REQUEST_BYTES = 8 * 1024 * 1024;
 class PayloadTooLarge extends Error {}
 function limitedRequest(request: Request) {

@@ -22,6 +22,7 @@ const statusText: Record<string, string> = {
   new: '待诊断',
   generating: 'AI 正在修复',
   ready: '修复卷已就绪',
+  grading: 'AI 正在批改',
   needs_retry: '还需要再练',
   passed: '本轮通过',
   completed: '已修复',
@@ -82,6 +83,7 @@ export function RepairPanel({ cases, loading, busy, date, backlogCount, aiConfig
         </div>}
         <div className="repair-actions">
           {item.status === 'generating' ? <span className="repair-action-note">{item.job_stage || '正在生成'} · {item.job_progress ?? 0}%</span>
+            : item.status === 'grading' ? <><span className="repair-action-note">AI 正在按步骤批改本轮变式，完成后自动记录轮次</span>{item.paper_id && <button className="primary" onClick={() => onOpenPaper(item)}>查看批改进度 →</button>}</>
             : item.status === 'ready' ? <button className="primary" onClick={() => onOpenPaper(item)}>打开修复卷 →</button>
             : item.status === 'needs_retry' ? <button className="primary" onClick={() => onStart(item)} disabled={busy}>继续生成变式 →</button>
             : item.status === 'passed' ? (item.next_repair_at && new Date(item.next_repair_at) > new Date()
@@ -89,7 +91,7 @@ export function RepairPanel({ cases, loading, busy, date, backlogCount, aiConfig
               : <button className="primary" onClick={() => onStart(item)} disabled={busy}>开始下一轮 →</button>)
             : item.status === 'completed' ? <span className="repair-action-note">5 轮全部通过，可以移出错题本</span>
             : <button className="primary" onClick={() => onStart(item)} disabled={busy}>{item.status === 'failed' ? '重新生成变式 →' : '生成该题变式 →'}</button>}
-          {!['generating', 'passed', 'completed'].includes(item.status) && <button className="repair-swap" onClick={() => onReplace(item)} disabled={busy}>替换这道题</button>}
+          {!['generating', 'grading', 'passed', 'completed'].includes(item.status) && <button className="repair-swap" onClick={() => onReplace(item)} disabled={busy}>替换这道题</button>}
         </div>
       </article>)}
     </div>}

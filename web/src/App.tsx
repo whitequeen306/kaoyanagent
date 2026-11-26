@@ -9,6 +9,7 @@ import { MathYearList } from './components/MathYearList';
 import { RecentPaperPreview } from './components/RecentPaperPreview';
 import { PdfExportOverlays } from './components/PdfExportOverlays';
 import { ComposeConfirmModal } from './components/ComposeConfirmModal';
+import { SubmitConfirmModal } from './components/SubmitConfirmModal';
 import { usePdfExport } from './hooks/usePdfExport';
 import { useAiSettings } from './hooks/useAiSettings';
 import { useDailyQuestion } from './hooks/useDailyQuestion';
@@ -29,7 +30,7 @@ import { MathPapersView } from './views/MathPapersView';
 import { MathMetricsView } from './views/MathMetricsView';
 import { deviceId, request } from './lib/api';
 import { sourceLabel } from './lib/paperMeta';
-import type { Difficulty, GradeResult, Knowledge, MathExamYear, Paper, PaperMode, Qtype, RepairCase, SourceMode } from './types';
+import type { Difficulty, GradeResult, Knowledge, MathExamYear, Paper, PaperGrading, PaperMode, Qtype, RepairCase, SourceMode } from './types';
 
 export default function App() {
   const [view, setView] = useState<'repair' | 'compose' | 'paper' | 'wrong' | 'papers' | 'examPapers' | 'metrics' | 'agent'>('compose');
@@ -46,9 +47,12 @@ export default function App() {
   const [recognizing, setRecognizing] = useState<Record<string, boolean>>({});
   const [recognitionNotes, setRecognitionNotes] = useState<Record<string, string>>({});
   const [result, setResult] = useState<GradeResult | null>(null);
+  const [grading, setGrading] = useState<PaperGrading | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [confirming, setConfirming] = useState(false);
+  const [submitConfirm, setSubmitConfirm] = useState(false);
+  const [cs408SubmitConfirm, setCs408SubmitConfirm] = useState(false);
   const [expandedReviews, setExpandedReviews] = useState<Record<string, boolean>>({});
   const [recentPreview, setRecentPreview] = useState<any>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -73,6 +77,26 @@ export default function App() {
     const timer = window.setInterval(() => setElapsed(Math.max(0, Math.floor((Date.now() - started) / 1000))), 1000);
     return () => window.clearInterval(timer);
   }, [paper?.id, result]);
+
+  const pendingGrading = Boolean(result?.attempts.some(attempt => attempt.grading_status === 'pending_review'));
+  useEffect(() => {
+    if (!paper || !pendingGrading || grading?.status === 'failed') return;
+    let cancelled = false;
+    const timer = window.setInterval(async () => {
+      try {
+        const data = await request<Paper>(`/api/papers/${paper.id}`);
+        if (cancelled || !data.result) return;
+        setResult(data.result);
+        setGrading(data.grading || null);
+        if (!(data.grading && data.grading.pending_count > 0)) window.clearInterval(timer);
+        else if (data.grading.job_id) {
+          // 服务端有 worker 时这一步会快速返回；无 worker 时由页面兜底推进。
+          void request(`/api/jobs/${data.grading.job_id}/step`, { method: 'POST', body: {} }).catch(() => {});
+        }
+      } catch {}
+    }, 2500);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [paper?.id, pendingGrading, grading?.status]);
 
   useEffect(() => {
     request<{ items: Knowledge[] }>('/api/knowledge').then(data => {
@@ -163,7 +187,7 @@ export default function App() {
       }
       const data = await request<Paper>('/api/papers/compose', { method: 'POST', body });
       setPaperOrigin('compose');
-      setPaper(data); setAnswers({}); setConfirmedLatex({}); setRecognitionNotes({}); setResult(null); setExpandedReviews({}); setElapsed(0); setView('paper');
+      setPaper(data); setAnswers({}); setConfirmedLatex({}); setRecognitionNotes({}); setResult(null); setGrading(null); setExpandedReviews({}); setElapsed(0); setView('paper');
     } catch (e) { setError(e instanceof Error ? e.message : '组卷失败'); }
     finally { setBusy(false); }
   }
@@ -178,7 +202,7 @@ export default function App() {
       return;
     }
     setPaperOrigin((task.paper as any).config_json?.origin === 'repair' ? 'repair' : 'compose');
-    setPaper(task.paper); setAnswers({}); setConfirmedLatex({}); setRecognitionNotes({}); setResult(null); setExpandedReviews({}); setElapsed(0); setView('paper');
+    setPaper(task.paper); setAnswers({}); setConfirmedLatex({}); setRecognitionNotes({}); setResult(null); setGrading(null); setExpandedReviews({}); setElapsed(0); setView('paper');
     dismissJob(task.id);
   }
   async function openRecentPaper(id: string) {
@@ -191,9 +215,10 @@ export default function App() {
   }
   async function submit() {
     if (!paper) return;
+    setSubmitConfirm(false);
     setBusy(true); setError('');
     try {
-      const data = await request<GradeResult>(`/api/papers/${paper.id}/submit`, { method: 'POST', body: {
+      const data = await request<GradeResult & { grading?: PaperGrading | null }>(`/api/papers/${paper.id}/submit`, { method: 'POST', body: {
         answers: paper.items_json.map(item => ({
           question_id: item.question.id,
           answer_raw: answers[item.question.id] || '',
@@ -202,9 +227,19 @@ export default function App() {
         })),
       } });
       setResult(data);
+      setGrading(data.grading || null);
       if (paperOrigin === 'exams') void loadMathExamYears(false);
       setTimeout(() => document.getElementById('grade-result')?.scrollIntoView({ behavior: 'smooth' }), 50);
     } catch (e) { setError(e instanceof Error ? e.message : '判卷失败'); }
+    finally { setBusy(false); }
+  }
+  async function retryGrading() {
+    if (!paper) return;
+    setBusy(true); setError('');
+    try {
+      const data = await request<{ grading?: PaperGrading | null }>(`/api/papers/${paper.id}/grade`, { method: 'POST', body: {} });
+      setGrading(data.grading || null);
+    } catch (e) { setError(e instanceof Error ? e.message : '重新批改启动失败'); }
     finally { setBusy(false); }
   }
   async function recognizeHandwriting(questionId: string, file: File) {
@@ -280,6 +315,7 @@ export default function App() {
     try {
       const data = await request<Paper>(`/api/papers/${item.paper_id}`);
       setPaper(data); setPaperOrigin('repair');
+      setGrading(data.grading || null);
       setAnswers(data.result ? Object.fromEntries(data.result.attempts.map(attempt => [attempt.question_id, attempt.answer_raw || ''])) : {});
       setResult(data.result || null); setExpandedReviews({}); setElapsed(0); setView('paper');
     } catch (e) { setError(e instanceof Error ? e.message : '修复卷加载失败'); }
@@ -312,6 +348,7 @@ export default function App() {
     try {
       const data = await request<Paper>(`/api/papers/${id}`);
       setPaper(data);
+      setGrading(data.grading || null);
       if (data.result) {
         setAnswers(Object.fromEntries(data.result.attempts.map(attempt => [attempt.question_id, attempt.answer_raw || '']))); setConfirmedLatex({}); setRecognitionNotes({});
         setResult(data.result);
@@ -349,6 +386,7 @@ export default function App() {
       const created = await request<Paper>('/api/math/exam-papers', { method: 'POST', body: { year, restart } });
       const data = await request<Paper>(`/api/papers/${created.id}`);
       setPaper(data);
+      setGrading(data.grading || null);
       if (data.result) {
         setAnswers(Object.fromEntries(data.result.attempts.map(attempt => [attempt.question_id, attempt.answer_raw || '']))); setConfirmedLatex({}); setRecognitionNotes({});
         setResult(data.result);
@@ -412,6 +450,30 @@ export default function App() {
       difficulty={difficulty}
       onClose={() => setConfirming(false)}
       onConfirm={compose}
+    />
+    <SubmitConfirmModal
+      open={submitConfirm && Boolean(paper)}
+      subject="math2"
+      answered={answered}
+      total={paper?.items_json.length || 0}
+      scorePoints={(paper?.total_score_x2 || 0) / 2}
+      unanswered={Math.max(0, (paper?.items_json.length || 0) - answered)}
+      gradingPending={Boolean(paper?.items_json.some(item => item.question.qtype === 'free_response'))}
+      busy={busy}
+      onClose={() => setSubmitConfirm(false)}
+      onConfirm={submit}
+    />
+    <SubmitConfirmModal
+      open={cs408SubmitConfirm && Boolean(cs408Paper)}
+      subject="cs408"
+      answered={cs408Paper ? cs408Paper.items.filter(item => cs408Answers[item.question_id]).length : 0}
+      total={cs408Paper?.items.length || 0}
+      scorePoints={(cs408Paper?.total_score_x2 || 0) / 2}
+      unanswered={cs408Paper ? cs408Paper.items.filter(item => !cs408Answers[item.question_id]).length : 0}
+      gradingPending={Boolean(cs408Paper?.items.some(item => item.question.qtype === 'free_response'))}
+      busy={cs408Busy}
+      onClose={() => setCs408SubmitConfirm(false)}
+      onConfirm={() => { setCs408SubmitConfirm(false); void submitCs408(); }}
     />
     <TopBar
       subject={subject}
@@ -486,6 +548,7 @@ export default function App() {
         recognitionNotes={recognitionNotes}
         expandedReviews={expandedReviews}
         result={result}
+        grading={grading}
         answered={answered}
         elapsed={elapsed}
         busy={busy}
@@ -496,7 +559,8 @@ export default function App() {
         onConfirmedLatex={(questionId, value) => setConfirmedLatex(current => ({ ...current, [questionId]: value }))}
         onRecognize={recognizeHandwriting}
         onToggleReview={questionId => setExpandedReviews(current => ({ ...current, [questionId]: !current[questionId] }))}
-        onSubmit={submit}
+        onSubmit={() => setSubmitConfirm(true)}
+        onRetryGrading={retryGrading}
         onLoadRepair={() => { void loadRepair(); setView('repair'); }}
         onLoadWrong={loadWrong}
         onCompose={() => { setView('compose'); setResult(null); }}
@@ -511,7 +575,7 @@ export default function App() {
         onDelete={deleteWrong}
         onCompose={() => setView('compose')}
       />}
-      {view === 'agent' && <AgentPanel aiConfigured={Boolean(aiSettings?.configured)} onOpenSettings={openSettings} onOpenPaper={data => { setPaperOrigin('papers'); setPaper(data); setResult(data.result || null); setAnswers(data.result ? Object.fromEntries(data.result.attempts.map(attempt => [attempt.question_id, attempt.answer_raw || ''])) : {}); setView('paper'); }} onQueueJob={enqueueJob} />}
+      {view === 'agent' && <AgentPanel aiConfigured={Boolean(aiSettings?.configured)} onOpenSettings={openSettings} onOpenPaper={data => { setPaperOrigin('papers'); setPaper(data); setGrading(data.grading || null); setResult(data.result || null); setAnswers(data.result ? Object.fromEntries(data.result.attempts.map(attempt => [attempt.question_id, attempt.answer_raw || ''])) : {}); setView('paper'); }} onQueueJob={enqueueJob} />}
       {view === 'papers' && <MathPapersView
         papers={myPapers}
         onOpen={openMyPaper}
@@ -548,7 +612,7 @@ export default function App() {
         answers={cs408Answers}
         busy={cs408Busy}
         onAnswer={setCs408Answer}
-        onSubmit={submitCs408}
+        onSubmit={() => setCs408SubmitConfirm(true)}
         backLabel={cs408PaperBack === 'compose' ? '408 自由练习' : cs408PaperBack === 'repair' ? '408 今日修复' : cs408PaperBack === 'history' ? '408 我的试卷' : cs408PaperBack === 'metrics' ? '408 数据中心' : '408 历年真题'}
         onBack={() => { setCs408View(cs408PaperBack); window.scrollTo({ top: 0, behavior: 'instant' }); }}
         onWrong={loadCs408Wrong}

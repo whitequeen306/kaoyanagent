@@ -13,7 +13,7 @@ export function Cs408Dashboard({ metrics, loading, onOpen, onRefresh }: {
     <h1>数据中心</h1>
     <p>汇总 408 题库、试卷、单选作答和章节薄弱点。只统计这台设备的匿名记录。</p>
     <div className="metric-grid">
-      <div className="metric-card"><span>408 题库</span><strong>{metrics.question_bank}</strong><small>道已发布真题</small></div>
+      <div className="metric-card"><span>408 题库</span><strong>{metrics.question_bank}</strong><small>已发布题（整卷 + 自由练习/AI）</small></div>
       <div className="metric-card"><span>已交卷</span><strong>{metrics.submitted}</strong><small>共 {metrics.papers} 张 408 试卷</small></div>
       <div className="metric-card"><span>真题年份</span><strong>{metrics.exam_years_done} / 18</strong><small>已交卷的整卷年份</small></div>
       <div className="metric-card"><span>单选得分率</span><strong>{metrics.score_rate_bp == null ? '—' : `${Math.round(metrics.score_rate_bp / 100)}%`}</strong><small>{metrics.single_attempts} 次单选作答</small></div>

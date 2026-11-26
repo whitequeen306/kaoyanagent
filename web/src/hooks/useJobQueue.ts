@@ -36,6 +36,29 @@ export function useJobQueue() {
     void runJob(next.id);
   }, [jobs, activeJobCount]);
 
+  useEffect(() => {
+    let cancelled = false;
+    request<{ items: any[] }>('/api/jobs').then(({ items }) => {
+      if (cancelled) return;
+      const restored = (items || [])
+        .filter(job => job.kind !== 'grading' && ['queued', 'generating', 'verifying'].includes(job.status))
+        .map(job => ({
+          id: job.id, status: 'queued' as const, stage: job.stage || '排队中', progress: job.progress || 0,
+          requestLabel: job.kind === 'variant' ? 'AI 修复 · 错题变式' : job.kind === 'cs408_paper' ? '408 AI 出卷' : 'AI 仿真组卷',
+          detail: job.detail || '任务在服务端继续推进…', phase: job.phase,
+          expectedCount: job.expected_count || 0, generatedCount: job.generated_count || 0,
+          verifiedCount: job.verified_count || 0, reusedCount: job.reused_count || 0,
+        }));
+      if (!restored.length) return;
+      setJobs(list => {
+        const known = new Set(list.map(task => task.id));
+        return [...list, ...restored.filter((task: JobTask) => !known.has(task.id))];
+      });
+      setJobsOpen(true);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
   function applyJobSnapshot(id: string, current: any) {
     if (!current) return;
     setJobs(list => list.map(task => {

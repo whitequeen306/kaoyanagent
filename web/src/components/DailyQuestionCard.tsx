@@ -117,6 +117,7 @@ export function DailyQuestionCard({
     {submitted && <div className="daily-ai-panel">
       <div className="daily-ai-messages">{daily.ai_messages.map((message, index) => <div className={`daily-ai-message ${message.role}`} key={`${message.role}-${index}`}><span>{message.role === 'assistant' ? 'AI' : '你'}</span><MathText text={message.content} /></div>)}</div>
       <div className="daily-ai-actions"><button className="primary" disabled={aiBusy} onClick={() => onAiAsk('')}>{aiBusy ? '正在思考…' : 'AI 讲解这道题'}</button><div className="daily-ai-followup"><input aria-label="追问内容" value={aiPrompt} onChange={event => onAiPromptChange(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing && !aiBusy && aiPrompt.trim()) onAiAsk(aiPrompt); }} placeholder="写下你不理解的步骤" /><button disabled={aiBusy || !aiPrompt.trim()} onClick={() => onAiAsk(aiPrompt)}>追问</button></div></div>
+      {aiBusy && <p className="muted">AI 讲解通常需要 10–60 秒，取决于模型服务；页面不会重复提交。</p>}
     </div>}
   </section>;
 }

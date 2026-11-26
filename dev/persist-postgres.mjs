@@ -90,7 +90,7 @@ export function createPersistence(runtime, connectionString) {
         runtime.generatedToday = Number(meta.get('generated_today')) || 0;
       }
       const stats = meta.get('compose_stats') ? JSON.parse(meta.get('compose_stats')) : null;
-      if (stats) runtime.composeStats = { success: Number(stats.success) || 0, failure: Number(stats.failure) || 0 };
+      if (stats) runtime.composeStats = { success: Number(stats.success) || 0, failure: Number(stats.failure) || 0, total_ms: Number(stats.total_ms) || 0, finished: Number(stats.finished) || 0 };
       if (meta.get('dataset')) runtime.dataset = meta.get('dataset');
     } catch (error) {
       console.warn('local Postgres load failed:', error.message);

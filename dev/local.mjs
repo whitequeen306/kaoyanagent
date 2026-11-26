@@ -23,6 +23,13 @@ const { createPersistence } = useSqlite
 const persistence = createPersistence(runtime, useSqlite ? resolve(root, 'data', 'kaoyan.db') : process.env.LOCAL_DATABASE_URL);
 await persistence.load();
 console.log(`Local storage: ${useSqlite ? 'SQLite' : 'PostgreSQL'}`);
+const { startJobRunner } = await import('../functions/job-runner.mjs');
+let saving = Promise.resolve();
+const saveRuntime = () => {
+  saving = saving.then(() => persistence.save()).catch(() => {});
+  return saving;
+};
+startJobRunner(runtime, { onChange: saveRuntime });
 const handle = application(runtime);
 const host = process.env.HOST || '127.0.0.1';
 const port = Number(process.env.PORT || 8000);
@@ -61,7 +68,7 @@ const server = http.createServer(async (req, res) => {
     response = errorResponse(error);
   } finally {
     if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) || runtime.dailyQuestionsDirty || runtime.repairDailyDirty || runtime.repairSamplingDirty) {
-      await persistence.save();
+      await saveRuntime();
       runtime.dailyQuestionsDirty = false;
       runtime.repairDailyDirty = false;
       runtime.repairSamplingDirty = false;

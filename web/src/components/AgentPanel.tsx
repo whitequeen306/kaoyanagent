@@ -182,11 +182,18 @@ export function AgentPanel({ aiConfigured, onOpenSettings, onOpenPaper, onQueueJ
     finally { setBusy(false); }
   }
   async function runAgentTask(id: string) {
-    for (let index = 0; index < 120; index += 1) {
-      const current = await request<any>(`/api/agent/tasks/${id}/step`, { method: 'POST', body: {} });
-      setTasks(list => list.map(task => task.id === id ? current : task));
-      if (['succeeded', 'failed', 'waiting_user', 'degraded', 'cancelled'].includes(current.status)) return;
-      await new Promise(resolve => setTimeout(resolve, current.status === 'waiting_async' ? 1000 : 500));
+    try {
+      for (let index = 0; index < 120; index += 1) {
+        const current = await request<any>(`/api/agent/tasks/${id}/step`, { method: 'POST', body: {} });
+        setTasks(list => list.map(task => task.id === id ? current : task));
+        if (['succeeded', 'failed', 'waiting_user', 'degraded', 'cancelled'].includes(current.status)) return;
+        await new Promise(resolve => setTimeout(resolve, current.status === 'waiting_async' ? 1000 : 500));
+      }
+      setError('任务推进超时，已停止自动推进。可以重新发送目标，或稍后刷新页面继续。');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '任务推进中断，请重试。');
+    } finally {
+      await loadState().catch(() => {});
     }
   }
   async function openArtifact(artifact: any) {

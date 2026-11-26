@@ -41,7 +41,12 @@ export function currentMetrics(runtime) {
     generated_at: new Date().toISOString(),
     // Compatibility aliases for the working surface.
     question_bank: { real, ai }, attempts: attempts.length, wrong_book_entries: wrongBookEntries.length,
-    compose: { success, failure, success_rate: totalCompose ? Math.round(success * 10000 / totalCompose) / 100 : null },
+    compose: {
+      success, failure,
+      success_rate: totalCompose ? Math.round(success * 10000 / totalCompose) / 100 : null,
+      avg_seconds: runtime.composeStats?.finished ? Math.round((runtime.composeStats.total_ms || 0) / runtime.composeStats.finished / 100) / 10 : null,
+      samples: runtime.composeStats?.finished || 0,
+    },
     recent_papers: recentPapers,
     note: '当前为本地运行指标；LLM 通过率与识别准确率待真实适配器接入后计算。',
   };

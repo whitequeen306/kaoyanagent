@@ -17,6 +17,7 @@ export interface Paper {
   id: string; mode: PaperMode; source_mode: SourceMode; items_json: PaperItem[];
   total_score_x2: number; status: string; adjustments: string[]; actual_ratio: { real: number; ai: number }; dataset?: string; created_at?: string;
   submitted_at?: string | null; result?: GradeResult | null; title?: string | null; origin?: string | null;
+  grading?: PaperGrading | null;
 }
 export interface Attempt {
   question_id: string; score_x2: number; max_score_x2: number; score_rate_bp: number;
@@ -27,7 +28,10 @@ export interface GradeResult {
   attempts: Attempt[]; score_x2: number; max_score_x2: number; score_rate_bp: number;
   by_source: Record<string, { score_x2: number; max_score_x2: number }>;
 }
-export type RepairStatus = 'new' | 'generating' | 'ready' | 'needs_retry' | 'passed' | 'completed' | 'failed';
+export interface PaperGrading {
+  pending_count: number; job_id: string | null; status: string; stage: string | null;
+}
+export type RepairStatus = 'new' | 'generating' | 'ready' | 'needs_retry' | 'passed' | 'completed' | 'failed' | 'grading';
 export interface RepairCase {
   id: string; question_id: string; status: RepairStatus;
   diagnosis: { cause_tags: string[]; summary: string; first_gap?: string; focus?: string; confidence?: number } | null;

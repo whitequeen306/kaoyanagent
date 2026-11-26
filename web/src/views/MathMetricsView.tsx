@@ -10,8 +10,8 @@ export function MathMetricsView({ metrics, trends, onOpenRecent }: {
     <p>展示聚合指标与近期组卷，不包含任何用户作答内容或设备标识。组卷记录可点击查看公开预览。</p>
     <div className="metric-grid">
       <div className="metric-card"><span>题库题目</span><strong>{metrics?.question_bank?.real + metrics?.question_bank?.ai || 0}</strong><small>真题 {metrics?.question_bank?.real || 0} / AI {metrics?.question_bank?.ai || 0}</small></div>
-      <div className="metric-card"><span>组卷成功</span><strong>{metrics?.compose?.success ?? 0}</strong><small>失败 {metrics?.compose?.failure ?? 0} 次</small></div>
-      <div className="metric-card"><span>组卷成功率</span><strong>{metrics?.compose?.success_rate == null ? '—' : `${metrics.compose.success_rate}%`}</strong><small>成功 /（成功 + 失败）</small></div>
+      <div className="metric-card"><span>组卷成功</span><strong>{metrics?.compose?.success ?? 0}</strong><small>{metrics?.compose?.avg_seconds != null ? `平均生成耗时 ${metrics.compose.avg_seconds} 秒` : '等待更多样本'}</small></div>
+      <div className="metric-card"><span>组卷成功率</span><strong>{metrics?.compose?.success_rate == null ? '—' : `${metrics.compose.success_rate}%`}</strong><small>含 1 次自动重试 · {metrics?.compose?.samples ?? 0} 次可计时样本</small></div>
       <div className="metric-card"><span>错题条目</span><strong>{metrics?.wrong_book_entries ?? '—'}</strong><small>匿名分桶</small></div>
     </div>
     <div className="panel recent-panel"><h2>近期组卷（任意用户，最近 8 张）</h2>

@@ -1,9 +1,9 @@
 import { MathText } from '../components/MathText';
 import { QuestionFigures } from '../components/QuestionFigures';
 import { difficultyLabel, formatScore } from '../lib/api';
-import type { GradeResult, Paper } from '../types';
+import type { GradeResult, Paper, PaperGrading } from '../types';
 
-export function MathPaperView({ paper, answers, confirmedLatex, recognizing, recognitionNotes, expandedReviews, result, answered, elapsed, busy, selectedNames, paperOrigin, onBack, onAnswer, onConfirmedLatex, onRecognize, onToggleReview, onSubmit, onLoadRepair, onLoadWrong, onCompose }: {
+export function MathPaperView({ paper, answers, confirmedLatex, recognizing, recognitionNotes, expandedReviews, result, grading, answered, elapsed, busy, selectedNames, paperOrigin, onBack, onAnswer, onConfirmedLatex, onRecognize, onToggleReview, onSubmit, onRetryGrading, onLoadRepair, onLoadWrong, onCompose }: {
   paper: Paper;
   answers: Record<string, string>;
   confirmedLatex: Record<string, string>;
@@ -11,6 +11,7 @@ export function MathPaperView({ paper, answers, confirmedLatex, recognizing, rec
   recognitionNotes: Record<string, string>;
   expandedReviews: Record<string, boolean>;
   result: GradeResult | null;
+  grading: PaperGrading | null;
   answered: number;
   elapsed: number;
   busy: boolean;
@@ -22,12 +23,15 @@ export function MathPaperView({ paper, answers, confirmedLatex, recognizing, rec
   onRecognize: (questionId: string, file: File) => void;
   onToggleReview: (questionId: string) => void;
   onSubmit: () => void;
+  onRetryGrading: () => void;
   onLoadRepair: () => void;
   onLoadWrong: () => void;
   onCompose: () => void;
 }) {
   const attemptMap = new Map(result?.attempts.map(attempt => [attempt.question_id, attempt]) || []);
   const backLabel = paperOrigin === 'papers' ? '我的试卷' : paperOrigin === 'repair' ? '今日修复' : paperOrigin === 'exams' ? '真题试卷' : '自由练习';
+  const pendingCount = grading?.pending_count ?? result?.attempts.filter(attempt => attempt.grading_status === 'pending_review').length ?? 0;
+  const gradingFailed = grading?.status === 'failed';
 
   return <>
     <div className="paper-toolbar no-print"><button className="back" onClick={onBack}>← {backLabel}</button></div>
@@ -50,7 +54,8 @@ export function MathPaperView({ paper, answers, confirmedLatex, recognizing, rec
       const question = item.question, attempt = attemptMap.get(question.id);
       const reviewOpen = Boolean(expandedReviews[question.id]);
       const hasReviewDetails = Boolean(attempt?.explanation) || Boolean(attempt?.solution_steps?.length);
-      return <article className={`question-card ${attempt ? (attempt.score_x2 === attempt.max_score_x2 ? 'correct' : 'incorrect') : ''}`} key={question.id}>
+      const isPending = attempt?.grading_status === 'pending_review';
+      return <article className={`question-card ${attempt && !isPending ? (attempt.score_x2 === attempt.max_score_x2 ? 'correct' : 'incorrect') : ''}`} key={question.id}>
         <div className="question-meta"><span className="question-number">{String(index + 1).padStart(2, '0')}</span><span className={`source-tag ${question.is_fixture ? 'fixture' : question.source}`}>{question.is_fixture ? '本地契约样例 · 非真题' : question.source === 'real' ? `${question.year || '历年'} 真题 · 第 ${question.seq_label} 题` : 'AI 原创 · 已校验'}</span><span>{question.qtype === 'single_choice' ? '选择题' : question.qtype === 'fill_blank' ? '填空题' : '解答题'}</span><span>难度：{difficultyLabel(question.difficulty)}</span><span>{formatScore(item.score_x2)} 分</span></div>
         <div className="stem"><MathText text={question.stem_latex} /></div>
         <QuestionFigures assets={question.figure_assets} />
@@ -75,11 +80,11 @@ export function MathPaperView({ paper, answers, confirmedLatex, recognizing, rec
             {attempt.solution_steps && attempt.solution_steps.length > 0 && <ol>{attempt.solution_steps.map((step, stepIndex) => <li key={stepIndex}><MathText text={step} /></li>)}</ol>}
             {!attempt.explanation && !attempt.solution_steps?.length && <p className="muted">这道题暂无更多解析。</p>}
           </div>}
-          <div className="score-line">本题得分 {formatScore(attempt.score_x2)} / {formatScore(attempt.max_score_x2)}</div>
+          <div className="score-line">{isPending ? '解答题待 AI 批改' : `本题得分 ${formatScore(attempt.score_x2)} / ${formatScore(attempt.max_score_x2)}`}</div>
         </div>}
-        {attempt && <div className="question-feedback"><strong>{attempt.grading_status === 'pending_review' ? '解答题待 rubric 模型复核' : attempt.score_x2 === attempt.max_score_x2 ? '回答正确' : '需要再看一眼'}</strong><span>{attempt.feedback || `得分 ${formatScore(attempt.score_x2)} / ${formatScore(attempt.max_score_x2)}`}</span></div>}
+        {attempt && <div className="question-feedback"><strong>{isPending ? (gradingFailed ? '批改暂时失败，可点上方「重新批改」' : 'AI 正在按步骤批改') : attempt.score_x2 === attempt.max_score_x2 ? '回答正确' : '需要再看一眼'}</strong><span>{attempt.feedback || (isPending ? '批改完成后自动更新得分与错题本。' : `得分 ${formatScore(attempt.score_x2)} / ${formatScore(attempt.max_score_x2)}`)}</span></div>}
       </article>;
     })}</section>
-    {result && <section className="grade-result no-print" id="grade-result"><span className="eyebrow">本次作答</span><h2>得分率 {result.score_rate_bp / 100}%</h2><p>得分 {formatScore(result.score_x2)} / {formatScore(result.max_score_x2)}。错题已自动加入错题本。</p><div className="source-score">{Object.entries(result.by_source).filter(([, value]) => value.max_score_x2 > 0).map(([key, value]) => <div key={key}><span>{key === 'real' ? '真题部分' : 'AI 原创部分'}</span><strong>{formatScore(value.score_x2)} / {formatScore(value.max_score_x2)}</strong></div>)}</div><div className="result-actions"><button onClick={onLoadRepair}>开始修复 →</button><button onClick={onLoadWrong}>查看错题本</button><button onClick={onCompose}>自由练习</button></div></section>}
+    {result && <section className="grade-result no-print" id="grade-result"><span className="eyebrow">本次作答</span><h2>得分率 {result.score_rate_bp / 100}%</h2><p>得分 {formatScore(result.score_x2)} / {formatScore(result.max_score_x2)}。{pendingCount ? '解答题还在批改，完成后总分与错题本会自动更新。' : '错题已自动加入错题本。'}</p>{pendingCount > 0 && <div className="grading-notice" role="status"><span className="agent-thinking"><i /><i /><i /></span><span>{gradingFailed ? '解答题批改暂时失败，作答已保存。' : `AI 正在按步骤批改 ${pendingCount} 道解答题，通常需要几秒到 1 分钟…`}</span>{gradingFailed && <button onClick={onRetryGrading} disabled={busy}>{busy ? '正在重试…' : '重新批改'}</button>}</div>}<div className="source-score">{Object.entries(result.by_source).filter(([, value]) => value.max_score_x2 > 0).map(([key, value]) => <div key={key}><span>{key === 'real' ? '真题部分' : 'AI 原创部分'}</span><strong>{formatScore(value.score_x2)} / {formatScore(value.max_score_x2)}</strong></div>)}</div><div className="result-actions"><button onClick={onLoadRepair}>开始修复 →</button><button onClick={onLoadWrong}>查看错题本</button><button onClick={onCompose}>自由练习</button></div></section>}
   </>;
 }

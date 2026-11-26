@@ -3,6 +3,7 @@ import { publicQuestion } from './grade.mjs';
 import {
   blindSolveDrafts, choiceLetter, escapeHtml, jobProvider, parseJson, releaseReuse,
 } from './generate.mjs';
+import { isJobBusy, withJobLock } from './job-lock.mjs';
 
 const GENERATE_SYSTEM_408 = `你是考研 408（数据结构、计算机组成原理、操作系统、计算机网络）的命题老师。根据给定章节和数量生成题目。
 硬性要求：
@@ -60,7 +61,7 @@ function validateCs408GeneratedDrafts(items, codes, counts) {
       const options = Array.isArray(item.options) ? item.options : [];
       const labels = options.map(option => String(option.label || '').toUpperCase()).sort();
       const texts = options.map(option => String(option.text || option.latex || '').trim());
-      if (labels.length !== 4 || labels.join('') !== 'ABCD' || texts.some(text => !text)) throw new AppError('ai_invalid_options', 502);
+      if (labels.length !== 4 || labels.join('') !== 'ABCD' || texts.some(text => !text) || new Set(texts).size !== 4) throw new AppError('ai_invalid_options', 502);
       const answer = choiceLetter(item.answer_latex || item.answer || '');
       const explanation = String(item.explanation || '').trim();
       if (!answer || !explanation) throw new AppError('ai_invalid_item', 502);
@@ -177,7 +178,12 @@ export function createCs408PaperJob(runtime, request, deviceId) {
   return job;
 }
 
-export async function advanceCs408PaperJob(runtime, job) {
+export function advanceCs408PaperJob(runtime, job) {
+  if (isJobBusy(runtime, job.id)) return Promise.resolve(job);
+  return withJobLock(runtime, job.id, () => advanceCs408PaperJobNow(runtime, job));
+}
+
+async function advanceCs408PaperJobNow(runtime, job) {
   if (job.status === 'succeeded' || job.status === 'failed') return job;
   job.updated_at = nowIso();
   try {

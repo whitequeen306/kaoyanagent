@@ -23,6 +23,7 @@ async function waitForPendingJob(runtime, task) {
   const job = runtime.jobs.find(item => item.id === pending.id && item.device_id === task.device_id);
   if (!job) {
     task.context_state.tool_results = [...(task.context_state.tool_results || []), { tool: pending.tool, ok: false, summary: '出卷任务已丢失，请重新发起。', data: { job_id: pending.id } }];
+    task.context_state.job_failures = (task.context_state.job_failures || 0) + 1;
     task.pending_job = null;
     task.status = 'queued';
     task.stage = '出卷任务丢失，准备重试';
@@ -44,7 +45,8 @@ async function waitForPendingJob(runtime, task) {
     task.context_state.artifacts = [...(task.context_state.artifacts || []), { type: 'paper', id: job.paper.id }];
     task.stage = '试卷已生成，整理结果';
   } else {
-    results.push({ tool: pending.tool, ok: false, summary: `生成失败：${jobErrorText(job)}。请调整题量、难度或改用真题后重试。`, data: { job_id: job.id, error: job.error } });
+    results.push({ tool: pending.tool, ok: false, summary: `生成失败：${jobErrorText(job)}。`, data: { job_id: job.id, error: job.error } });
+    task.context_state.job_failures = (task.context_state.job_failures || 0) + 1;
     task.stage = '组卷失败，正在调整方案';
   }
   task.context_state.tool_results = results;
@@ -65,7 +67,7 @@ function parseDecision(text) {
 }
 
 function decisionPrompt(context) {
-  return `${context.messages.map(message => `${message.role}: ${message.content}`).join('\n\n')}\n\n请输出严格 JSON，不要代码块：\n如果必须调用工具：{"action":"tool","tool":"工具名","args":{},"reply":"向用户说明正在做什么"}\n如果信息不足或需要用户确认：{"action":"ask","reply":"需要确认的问题","requires_confirmation":true}\n如果可以完成：{"action":"respond","reply":"最终回复","summary_update":"可选：根据本轮事实更新 Agent 推断"}\n工具名只能来自已注入的工具 schema，不能编造。工具结果已包含所需 ID 时直接使用，不要重复调用同一个只读工具。给用户的 reply 不要包含 UUID、哈希或内部 ID；用题号、知识点名称和试卷标题表达。`;
+  return `${context.messages.map(message => `${message.role}: ${message.content}`).join('\n\n')}\n\n请输出严格 JSON，不要代码块：\n如果必须调用工具：{"action":"tool","tool":"工具名","args":{},"reply":"向用户说明正在做什么"}\n如果信息不足或需要用户确认：{"action":"ask","reply":"需要确认的问题","requires_confirmation":true}\n如果可以完成：{"action":"respond","reply":"最终回复","summary_update":"可选：根据本轮事实更新 Agent 推断"}\n工具名只能来自已注入的工具 schema，不能编造。工具结果已包含所需 ID 时直接使用，不要重复调用同一个只读工具。如果工具结果显示组卷或变式任务失败，禁止再次调用 compose_paper 或 create_wrong_variants，直接 action=respond 说明失败并给出替代建议。给用户的 reply 不要包含 UUID、哈希或内部 ID；用题号、知识点名称和试卷标题表达。`;
 }
 
 function contextToolData(name, data) {
@@ -120,6 +122,56 @@ function taskView(task) {
   };
 }
 
+function readableToolFacts(task) {
+  const wanted = new Set(['list_wrong_questions', 'diagnose_attempts', 'list_knowledge_nodes', 'get_today_review', 'list_papers']);
+  return (task.context_state.tool_results || [])
+    .filter(item => item.ok && wanted.has(item.tool))
+    .map(item => item.summary)
+    .slice(0, 4);
+}
+
+function cannedFallback(task) {
+  const failed = (task.context_state.tool_results || []).filter(item => !item.ok);
+  const reason = JOB_ERROR_TEXT[failed.at(-1)?.data?.error] || '生成服务暂时不可用';
+  const facts = readableToolFacts(task);
+  return [
+    `这次练习卷没有生成成功（${reason}）。`,
+    facts.length ? `我先按已经查到的记录给你能马上执行的替代方案：${facts.join('；')}。` : '',
+    '建议：',
+    '1. 去「自由练习」按同一知识点用真题组 3 道题，先保持手感；',
+    '2. 回到「今日修复」完成今天的错题变式，这条路径不依赖 AI 生成；',
+    '3. 想继续用 AI 仿真时，把题量降到 2–3 道或改为「真题」源再试一次。',
+    '本次没有写入任何新的错题或计划。',
+  ].filter(Boolean).join('\n');
+}
+
+async function fallbackReply(runtime, task, conversation) {
+  const canned = cannedFallback(task);
+  const llm = providerFor(runtime, task.device_id);
+  if (!llm) return canned;
+  try {
+    const facts = (task.context_state.tool_results || []).map(item => `${item.tool}: ${item.ok ? '成功' : '失败'} - ${item.summary}`).join('\n');
+    const raw = await llm([
+      { role: 'system', content: '你是题脉学习助手。只输出 JSON。' },
+      { role: 'user', content: `用户目标：${task.goal}\n已完成的工具结果：\n${facts}\n\n最后一次组卷任务失败。请只输出 {"action":"respond","reply":"..."}，禁止再调用任何工具，禁止声称试卷已经生成。用中文给出 2-3 条今天就能执行的替代建议，可以引用上面查到的错题数量与知识点。只输出 JSON。` },
+    ], { maxTokens: 700, temperature: 0.3 });
+    const parsed = parseDecision(raw);
+    if (parsed.action === 'respond' && String(parsed.reply || '').trim()) return readableReply(runtime, String(parsed.reply).trim());
+  } catch {}
+  return canned;
+}
+
+async function degradeTask(runtime, task, conversation, reply, { stage = '已给出替代建议', error = 'job_failed' } = {}) {
+  task.status = 'degraded';
+  task.stage = stage;
+  task.error = error;
+  task.pending_job = null;
+  task.result = { reply: readableReply(runtime, reply), artifacts: task.context_state.artifacts || [], partial: true };
+  appendMessages(conversation, [{ role: 'assistant', content: task.result.reply, created_at: nowIso(), task_id: task.id }]);
+  task.updated_at = nowIso();
+  return task;
+}
+
 export function createAgentTask(runtime, deviceId, input) {
   const goal = String(input.goal || '').trim();
   if (!goal || goal.length > 2000) fail('invalid_input');
@@ -145,9 +197,14 @@ export async function advanceAgentTask(runtime, task) {
   task.updated_at = nowIso();
   try {
     if (task.pending_job) return await waitForPendingJob(runtime, task);
+    const jobFailures = task.context_state.job_failures || 0;
+    if (jobFailures >= 2) return await degradeTask(runtime, task, conversation, await fallbackReply(runtime, task, conversation));
     const toolResults = task.context_state.tool_results || [];
     const toolContext = toolResults.map(item => ({ tool: item.tool, ok: item.ok, summary: item.summary, data: contextToolData(item.tool, item.data) }));
     const context = buildAgentContext(runtime, task.device_id, conversation, task.goal, toolContext);
+    if (jobFailures > 0) {
+      context.messages.push({ role: 'system', content: '上一次组卷或变式任务失败。禁止再次调用 compose_paper 或 create_wrong_variants；请直接 action=respond，用已有查询结果给出今天就能执行的替代建议。' });
+    }
     if (task.confirmed) {
       context.messages.splice(Math.max(0, context.messages.length - 1), 0, { role: 'system', content: '用户已确认上一轮方案，不要重复询问，直接调用工具或给出最终结果。' });
     }
@@ -173,11 +230,11 @@ export async function advanceAgentTask(runtime, task) {
       return task;
     }
     if (!agentToolSchemas.some(tool => tool.name === decision.tool)) throw new AppError('agent_unknown_tool', 400);
+    if (jobFailures > 0) return await degradeTask(runtime, task, conversation, cannedFallback(task));
     if (task.current_step >= 6) {
-      task.status = 'degraded';
-      task.stage = '达到步数上限';
-      task.result = { reply: '本轮已完成部分查询，请确认下一步后再继续。', artifacts: task.context_state.artifacts || [], partial: true };
-      return task;
+      return await degradeTask(runtime, task, conversation,
+        `本轮已完成 ${task.current_step} 步查询，够你先动起来了。${readableToolFacts(task).join('；') || ''}先按这些结果安排一次练习；需要我继续时，再告诉我下一步目标即可。`,
+        { stage: '达到步数上限', error: 'step_limit' });
     }
     task.stage = `正在${agentToolLabels[decision.tool] || '处理学习任务'}`;
     task.current_step += 1;

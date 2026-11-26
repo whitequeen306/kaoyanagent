@@ -106,10 +106,13 @@ export function repairCaseView(repair, runtime, deviceId) {
   const paper = repair.paper_id ? runtime.papers.find(item => item.id === repair.paper_id) || null : null;
   const job = repair.job_id ? runtime.jobs.find(item => item.id === repair.job_id) : null;
   const stats = paperStats(runtime, paper, deviceId);
+  const pendingGrading = Boolean(paper) && paper.status === 'submitted'
+    && runtime.attempts.some(item => item.paper_instance_id === paper.id && item.grading_status === 'pending_review');
   let status = repair.status;
   if (repair.repair_passes >= PASS_TARGET) status = 'completed';
   else if (job && !['succeeded', 'failed'].includes(job.status)) status = 'generating';
   else if (job?.status === 'failed') status = 'failed';
+  else if (pendingGrading) status = 'grading';
   else if (paper?.status === 'draft') status = 'ready';
   else if (paper?.status === 'submitted') status = repair.last_result === 'passed' ? 'passed' : 'needs_retry';
   else if (status === 'generating' && !job) status = 'new';

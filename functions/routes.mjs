@@ -16,6 +16,8 @@ import { advanceCs408PaperJob, createCs408PaperJob } from './cs408-generate.mjs'
 import { createImageAsset } from './image-assets.mjs';
 import { recognizeAnswer } from './recognition.mjs';
 import { createCs408Paper, createCs408PracticePaper, cs408Metrics, cs408NodeQuestionCount, cs408PaperView, ensureCs408RepairCases, gradeCs408Submission, listCs408History, listCs408RepairCases, listCs408WrongBook, listCs408Years } from './cs408.mjs';
+import { advanceGradingJob, createGradingJob, paperGradingState } from './paper-grading.mjs';
+import { kickJobs } from './job-runner.mjs';
 
 function json(value, status = 200) { return Response.json(value, { status }); }
 function paperView(paper) { const { device_id, ...rest } = paper; return rest; }
@@ -30,12 +32,14 @@ function readableRepairTitle(paper, runtime) {
 }
 function jobView(job) {
   return {
-    id: job.id, status: job.status, stage: job.stage, progress: job.progress,
+    id: job.id, kind: job.kind || 'paper', status: job.status, stage: job.stage, progress: job.progress,
     phase: job.phase || null, detail: job.detail || '',
     expected_count: job.expected_count || 0,
     generated_count: job.generated_count || 0,
     verified_count: job.verified_count || 0,
     reused_count: job.reused_count || 0,
+    graded_count: job.graded_count || 0,
+    paper_id: job.paper_id || job.paper?.id || null,
     error: job.error || null,
     diagnosis: job.diagnosis || null,
     repair_case_id: job.config?.repair_case_id || null,
@@ -161,6 +165,7 @@ function repairDailyPayload(deviceId, runtime) {
 
 export function application(runtime) {
   return async request => {
+    kickJobs(runtime);
     const url = new URL(request.url);
     const path = url.pathname.replace(/^\/(?:functions\/v1\/)?(?:app|app-d[0-9a-f]{32})/, '') || '/';
     if (path === '/api/health' && request.method === 'GET') return json({ ok: true, mode: 'local' });
@@ -438,6 +443,8 @@ export function application(runtime) {
             .map(id => runtime.knowledge.find(node => node.id === id)?.name)
             .filter(Boolean);
           const summary = paper.status === 'submitted' ? submissionSummary(paper, runtime.attempts) : null;
+          const gradingPending = paper.status === 'submitted'
+            && runtime.attempts.some(attempt => attempt.paper_instance_id === paper.id && attempt.grading_status === 'pending_review');
           const maxScore = paper.items_json.reduce((sum, item) => sum + item.score_x2, 0);
           const origin = paper.config_json?.origin || paper.origin || null;
           const sourceCount = paper.config_json?.variant_items?.length || 0;
@@ -454,7 +461,7 @@ export function application(runtime) {
                 : origin === 'math_exam' ? paper.title
                 : concepts.length ? `${concepts.slice(0, 3).join(' · ')}${concepts.length > 3 ? ' 等' : ''}` : '综合练习',
             score_x2: summary?.score_x2 ?? null, max_score_x2: summary?.max_score_x2 ?? maxScore,
-            score_rate_bp: summary?.score_rate_bp ?? null,
+            score_rate_bp: summary?.score_rate_bp ?? null, grading_pending: gradingPending,
           };
         });
       return json({ items });
@@ -482,6 +489,7 @@ export function application(runtime) {
             : origin === 'math_exam' ? paper.title
             : concepts.length ? `${concepts.slice(0, 3).join(' · ')}${concepts.length > 3 ? ' 等' : ''}` : null,
         result: paper.status === 'submitted' ? paperResult(paper, runtime) : null,
+        grading: paper.status === 'submitted' ? paperGradingState(runtime, paper) : null,
       });
     }
     match = path.match(/^\/api\/papers\/([0-9a-fA-F-]{36})\/submit$/);
@@ -495,10 +503,25 @@ export function application(runtime) {
       }
       const result = idempotent(runtime, request, deviceId, `submit:${paper.id}`, input, () => {
         gradeSubmission(paper, { ...input, device_id: deviceId }, runtime);
-        syncRepairForPaper(runtime, paper);
-        return { paper_instance_id: paper.id, ...paperResult(paper, runtime) };
+        const gradingJob = createGradingJob(runtime, paper, deviceId);
+        if (!gradingJob) syncRepairForPaper(runtime, paper);
+        return {
+          paper_instance_id: paper.id, ...paperResult(paper, runtime),
+          grading: paperGradingState(runtime, paper), grading_job_id: gradingJob?.id || null,
+        };
       });
+      kickJobs(runtime);
       return json(result);
+    }
+    match = path.match(/^\/api\/papers\/([0-9a-fA-F-]{36})\/grade$/);
+    if (match && request.method === 'POST') {
+      const paper = runtime.papers.find(p => p.id === match[1].toLowerCase() && p.device_id === deviceId && (p.subject || 'math2') === 'math2');
+      if (!paper) fail('not_found', 404);
+      if (paper.status !== 'submitted') fail('state_conflict', 409);
+      const job = createGradingJob(runtime, paper, deviceId);
+      if (!job) fail('nothing_to_grade', 409);
+      kickJobs(runtime);
+      return json({ grading_job_id: job.id, grading: paperGradingState(runtime, paper) }, 202);
     }
     if (path === '/api/wrong-book' && request.method === 'GET') {
       return json({ items: listWrongBook(deviceId, runtime).map(item => {
@@ -632,12 +655,22 @@ export function application(runtime) {
       });
       return json(result, 202);
     }
+    if (path === '/api/jobs' && request.method === 'GET') {
+      const items = runtime.jobs
+        .filter(job => job.device_id === deviceId && Date.now() - Date.parse(job.created_at) < 2 * 86400000)
+        .slice()
+        .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
+        .slice(0, 12)
+        .map(jobView);
+      return json({ items });
+    }
     match = path.match(/^\/api\/jobs\/([0-9a-fA-F-]{36})(?:\/step)?$/);
     if (match && request.method === 'POST') {
-      const job = runtime.jobs.find(j => j.id === match[1].toLowerCase() && j.device_id === deviceId && (j.kind === 'paper' || j.kind === 'variant' || j.kind === 'cs408_paper'));
+      const job = runtime.jobs.find(j => j.id === match[1].toLowerCase() && j.device_id === deviceId);
       if (!job) fail('not_found', 404);
       const updated = job.kind === 'variant' ? await advanceVariantJob(runtime, job)
         : job.kind === 'cs408_paper' ? await advanceCs408PaperJob(runtime, job)
+        : job.kind === 'grading' ? await advanceGradingJob(runtime, job)
         : await advancePaperJob(runtime, job);
       return json(jobView(updated));
     }
